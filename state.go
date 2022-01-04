@@ -12,138 +12,9 @@ import (
 var (
 	// valinfoPool         sync.Pool
 	statePool           sync.Pool
-	nilval              = reflect.ValueOf(nil)
 	jsonType            = reflect.TypeOf(RawJSON{})
 	textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
 )
-
-// func newValinfo(v reflect.Value) valinfo {
-// 	var vi valinfo
-// 	if v := valinfoPool.Get(); v != nil {
-// 		vi = *v.(*valinfo)
-// 	} else {
-// 		vi = valinfo{}
-// 	}
-// 	vi.Value = v
-// 	return vi
-// }
-
-// type valinfo struct {
-// 	reflect.Value
-// 	deleter  Deleter
-// 	resolver Resolver
-// 	assigner Assigner
-// 	found    bool
-// }
-
-// func (v valinfo) Done() {
-// 	go func() {
-// 		v.deleter = nil
-// 		v.assigner = nil
-// 		v.resolver = nil
-// 		v.Value = nilval
-// 		valinfoPool.Put(&v)
-// 	}()
-// }
-
-// func (v valinfo) isDeleter() bool  { return v.deleter != nil }
-// func (v valinfo) isAssigner() bool { return v.assigner != nil }
-// func (v valinfo) isResolver() bool { return v.resolver != nil }
-
-// func (v *valinfo) copy(src valinfo) {
-// 	v.Value = src.Value
-// 	v.assigner = src.assigner
-// 	v.deleter = src.deleter
-// 	v.resolver = src.resolver
-// 	v.found = src.found
-// }
-
-// func (v *valinfo) init(op Operation) error {
-// 	// After the first round-trip, we set v back to the original value to
-// 	// preserve the original RW flags contained in reflect.Value.
-// 	v0 := v.Value
-// 	haveAddr := false
-
-// 	// If v is a named type and is addressable,
-// 	// start with its address, so that if the type has pointer methods,
-// 	// we find them.
-// 	if v.Kind() != reflect.Ptr && v.Type().Name() != "" && v.Value.CanAddr() {
-// 		haveAddr = true
-// 		v.Value = v.Value.Addr()
-// 	}
-// 	for {
-// 		// checking the pointer for Resolver
-// 		if !v.isResolver() && v.Type().NumMethod() > 0 && v.Value.CanInterface() {
-// 			if r, ok := v.Value.Interface().(Resolver); ok {
-// 				v.resolver = r
-// 			}
-// 		}
-// 		// Load value from interface, but only if the result will be
-// 		// usefully addressable.
-// 		if v.Kind() == reflect.Interface && !v.IsNil() {
-// 			e := v.Value.Elem()
-// 			if e.Kind() == reflect.Ptr && !e.IsNil() && (op.IsDeleting() || e.Elem().Kind() == reflect.Ptr) {
-// 				haveAddr = false
-// 				v.Value = e
-// 				continue
-// 			}
-// 		}
-// 		// if Resolver was not found, checking the element for Resolver.
-// 		if !v.isResolver() && v.Type().NumMethod() > 0 && v.CanInterface() {
-// 			if r, ok := v.Interface().(Resolver); ok {
-// 				v.resolver = r
-// 			}
-// 		}
-
-// 		if v.Type().AssignableTo(jsonType) {
-// 			// TODO: handle RawJSON
-// 		}
-
-// 		if v.Kind() != reflect.Ptr {
-// 			break
-// 		}
-// 		// Prevent infinite loop if v is an interface pointing to its own address:
-// 		//     var v interface{}
-// 		//     v = &v
-// 		if v.Elem().Kind() == reflect.Interface && v.Elem().Elem() == v.Value {
-// 			v.Value = v.Elem()
-// 			break
-// 		}
-// 		if v.IsNil() {
-// 			switch op {
-// 			case Assigning:
-// 				v.Set(reflect.New(v.Type().Elem()))
-// 			case Deleting:
-// 				return nil
-// 			case Resolving:
-// 				return ErrNotFound
-// 			}
-// 		}
-
-// 		if v.Type().NumMethod() > 0 && v.CanInterface() {
-// 			switch op {
-// 			case Deleting:
-// 				if d, ok := v.Interface().(Deleter); ok {
-// 					v.deleter = d
-// 					return nil
-// 				}
-// 			case Assigning:
-// 				if a, ok := v.Interface().(Assigner); ok {
-// 					v.assigner = a
-// 					return nil
-// 				}
-// 			}
-// 		}
-
-// 		if haveAddr {
-// 			v.Value = v0 // restore original value after round-trip Value.Addr().Elem()
-// 			haveAddr = false
-// 		} else {
-// 			v.Value = v.Value.Elem()
-// 		}
-// 	}
-// 	return nil
-// }
 
 func newState(ptr JSONPointer, op Operation) *state {
 	var s *state
@@ -193,8 +64,63 @@ func (s *state) setValue(dst reflect.Value, val reflect.Value) error {
 	}
 }
 
+func (s *state) nextToken() (Token, error) {
+	var t Token
+	var ok bool
+	if s.current, t, ok = s.current.Next(); !ok {
+		return "", fmt.Errorf("unexpected end of JSON pointer %v", s.current)
+	}
+	return t, nil
+}
+
+func (s *state) resolve(v reflect.Value) (reflect.Value, error) {
+	var t Token
+	var err error
+	for {
+		if s.current.IsRoot() {
+			return v, nil
+		}
+
+		typ := v.Type()
+		t, err = s.nextToken()
+		if err != nil {
+			return v, newError(err, s, typ)
+		}
+		v, err = s.resolveNext(v, t)
+		if err == nil && v.Kind() == reflect.Invalid {
+			err = newError(ErrNotFound, s, typ)
+		}
+		if err != nil {
+			s.current = s.current.Prepend(t)
+			updateErrorState(err, s)
+			return v, err
+		}
+	}
+}
+
 func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
+	if v.Type().NumMethod() > 0 && v.CanInterface() {
+		if resolver, ok := v.Interface().(Resolver); ok {
+			// storing the current pointer in the event the Resolver mutates it and
+			// there is an error
+			rv, err := s.resolveResolver(resolver)
+			// if the Resolver returns an error, it can either be a YieldOperation
+			// which continues the flow or an actual error.
+			if err != nil {
+				// if it isn't a yield operation, return the error
+				if !errors.Is(err, YieldOperation) {
+					return rv, newError(err, s, reflect.TypeOf(rv))
+				}
+				// otherwise restore the pointer to the previous state
+			}
+		}
+	}
 	switch v.Kind() {
+	case reflect.Interface, reflect.Ptr:
+		if v.IsNil() {
+			return v, nil
+		}
+		return s.resolveNext(v.Elem(), t)
 	case reflect.Map:
 		return s.resolveMapIndex(v, t)
 	case reflect.Array:
@@ -205,55 +131,15 @@ func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
 		return s.resolveStructField(v, t)
 	default:
 		// TODO: handle other types or return an error
-		panic("unexpected type")
+		panic("unexpected type: " + v.Type().String())
 	}
 }
 
-func (s *state) resolve(v reflect.Value) (reflect.Value, error) {
-	var t Token
-	var ok bool
-	var err error
-	for {
-		if s.current.IsRoot() {
-			return v, nil
-		}
-		if s.current, t, ok = s.current.Next(); !ok {
-			return v, newError(fmt.Errorf("unexpected end of JSON pointer %v", s.current), s, v.Type())
-		}
-		if v.Type().NumMethod() > 0 && v.CanInterface() {
-			if resolver, ok := v.Interface().(Resolver); ok {
-				prev := s.current
-				// storing the current pointer in the event the Resolver mutates it and
-				// there is an error
-				rv, err := s.resolveResolver(resolver, t)
-				// if the Resolver returns an error, it can either be a YieldOperation
-				// which continues the flow or an actual error.
-				if err != nil {
-					// if it isn't a yield operation, return the error
-					if !errors.Is(err, YieldOperation) {
-						return rv, newError(err, s, reflect.TypeOf(rv))
-					}
-					// otherwise restore the pointer to the previous state
-					s.current = prev
-				}
-				if s.current == Root {
-					return rv, nil
-				}
-			}
-		}
-		v, err = s.resolveNext(v, t)
-		fmt.Println(v.Type())
-		if err != nil {
-			return v, err
-		}
-	}
-}
-
-func (s *state) resolveResolver(r Resolver, t Token) (reflect.Value, error) {
+func (s *state) resolveResolver(r Resolver) (reflect.Value, error) {
 	res, err := r.ResolveJSONPointer(&s.current, s.op)
 	if err != nil {
 		if errors.Is(err, YieldOperation) {
-			return nilval, YieldOperation
+			return reflect.Value{}, YieldOperation
 		}
 		rv := reflect.ValueOf(r)
 		return rv, &ptrError{
@@ -266,7 +152,11 @@ func (s *state) resolveResolver(r Resolver, t Token) (reflect.Value, error) {
 }
 
 func (s *state) resolveMapIndex(v reflect.Value, t Token) (reflect.Value, error) {
-	panic("not implemented") // TODO: impl
+	kv, err := s.mapKey(v, t)
+	if err != nil {
+		return kv, err
+	}
+	return v.MapIndex(kv), nil
 }
 
 func (s *state) resolveArrayIndex(v reflect.Value, t Token) (reflect.Value, error) {
@@ -293,8 +183,7 @@ func (s *state) resolveStructField(v reflect.Value, t Token) (reflect.Value, err
 		}
 	}
 	if f == nil {
-		// TODO: replace with error
-		panic("field not found")
+		return reflect.Value{}, newError(ErrNotFound, s, v.Type())
 	}
 
 	return v.FieldByIndex(f.index), nil
@@ -350,7 +239,7 @@ func (s *state) assign(src reflect.Value, value interface{}) error {
 	if err != nil {
 		return err
 	}
-	panic("not impl")
+	panic("assign not impl")
 
 	// setting the current pointer to the new fragment
 	// s.current = p
@@ -369,8 +258,54 @@ func (s *state) delete(src reflect.Value) error {
 	panic("not implemented") // TODO: impl
 }
 
-func (s *state) mapKey(src reflect.Value, typ reflect.Type, t Token) (reflect.Value, error) {
-	kt := typ.Key()
+func (s *state) index(src reflect.Value, t Token) (reflect.Value, error) {
+	switch src.Kind() {
+	case reflect.Interface, reflect.Ptr:
+		// return s.index(src.Elem(), t)
+	case reflect.Array:
+		return s.arrayIndex(src, t)
+	case reflect.Slice:
+		return s.sliceIndex(src, t)
+	}
+	panic("index not implemented")
+}
+
+func (s *state) sliceIndex(src reflect.Value, t Token) (reflect.Value, error) {
+	i, err := t.Index(src.Len())
+	_ = i
+	_ = err
+	panic("sliceIndex is not implemented")
+}
+
+func (s *state) arrayIndex(src reflect.Value, t Token) (reflect.Value, error) {
+	// if t == "-" then we attempt to get the last non-zero index
+	z := -1
+	if t == "-" {
+		for i := src.Len() - 1; i >= 0; i-- {
+			if !src.Index(i).IsZero() {
+				break
+			}
+			z = i
+		}
+		if z < 0 {
+			return reflect.Value{}, newError(&indexError{
+				err:      ErrOutOfRange,
+				maxIndex: src.Len() - 1,
+				index:    -1,
+			}, s, src.Type())
+		}
+		return reflect.ValueOf(z), nil
+	}
+
+	z, err := t.Index(src.Type().Len())
+	if err != nil {
+		return reflect.Value{}, newError(err, s, src.Type())
+	}
+	return reflect.ValueOf(z), nil
+}
+
+func (s *state) mapKey(src reflect.Value, t Token) (reflect.Value, error) {
+	kt := src.Type().Key()
 	var kv reflect.Value
 	// checks to see if the map's key implements encoding.TextUnmarshaler
 	// if so, we use that to unmarshal the key
@@ -380,7 +315,7 @@ func (s *state) mapKey(src reflect.Value, typ reflect.Type, t Token) (reflect.Va
 			return kv, &keyError{
 				ptrError: ptrError{
 					err:   err,
-					typ:   typ,
+					typ:   src.Type(),
 					state: *s,
 				},
 				keyType:  kt,
@@ -399,15 +334,14 @@ func (s *state) mapKey(src reflect.Value, typ reflect.Type, t Token) (reflect.Va
 				return kv, &keyError{
 					ptrError: ptrError{
 						err:   err,
-						typ:   typ,
+						typ:   src.Type(),
 						state: *s,
 					},
 					keyType:  kt,
 					keyValue: kv,
 				}
-				return kv, err
 			}
-			kv = reflect.ValueOf(i).Convert(typ.Key())
+			kv = reflect.ValueOf(i).Convert(src.Type().Key())
 
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 			u, err := t.Uint64()
@@ -415,7 +349,7 @@ func (s *state) mapKey(src reflect.Value, typ reflect.Type, t Token) (reflect.Va
 				return kv, &keyError{
 					ptrError: ptrError{
 						err:   err,
-						typ:   typ,
+						typ:   src.Type(),
 						state: *s,
 					},
 					keyType:  kt,
@@ -423,14 +357,14 @@ func (s *state) mapKey(src reflect.Value, typ reflect.Type, t Token) (reflect.Va
 				}
 			}
 
-			kv = reflect.ValueOf(u).Convert(typ.Key())
+			kv = reflect.ValueOf(u).Convert(src.Type().Key())
 		}
 	}
-	if !kv.Type().AssignableTo(typ.Key()) {
+	if !kv.Type().AssignableTo(src.Type().Key()) {
 		return kv, &keyError{
 			ptrError: ptrError{
 				err:   ErrInvalidKeyType,
-				typ:   typ,
+				typ:   src.Type(),
 				state: *s,
 			},
 			keyType:  kt,
@@ -442,7 +376,7 @@ func (s *state) mapKey(src reflect.Value, typ reflect.Type, t Token) (reflect.Va
 
 func (s *state) setMapIndex(src reflect.Value, typ reflect.Type, v reflect.Value, token Token) error {
 	panic("not impl")
-	// kv, err := s.mapKey(src, typ)
+	// kv, err := s.mapIndex(src, typ)
 	// if err != nil {
 	// 	return err
 	// }

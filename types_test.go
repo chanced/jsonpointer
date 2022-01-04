@@ -30,11 +30,11 @@ type Nested struct {
 	UintMap        map[uint64]uint64      `json:"uintmap"`
 	CustomMap      map[Key]string         `json:"custommap"`
 	AnonStruct     struct{ Value string } `json:"anon"`
-	StrSlice       []string               `json:"strSlice"`
-	IntSlice       []int                  `json:"intSlice"`
-	EntrySlice     []*Entry               `json:"entrySlice"`
-	StrArray       [3]string              `json:"strArray"`
-	IntArray       [3]int                 `json:"intArray"`
+	StrSlice       []string               `json:"strslice"`
+	IntSlice       []int                  `json:"intslice"`
+	EntrySlice     []*Entry               `json:"entryslice"`
+	StrArray       [3]string              `json:"strarray"`
+	IntArray       [3]int                 `json:"intarray"`
 	AnonStructPtr  *struct {
 		Value string `json:"value"`
 	} `json:"anonPtr"`

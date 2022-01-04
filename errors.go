@@ -28,9 +28,9 @@ var (
 	ErrNotAssignable = errors.New("jsonpointer: invalid value type")
 	// ErrNotFound indicates a JSONPointer is not reachable from the root object
 	// (e.g. a nil pointer, missing map key).
-	ErrNotFound = errors.New(`jsonpointer: token path not found`)
-	// ErrOutOfBounds indicates an index is out of bounds for an array or slice
-	ErrOutOfBounds = errors.New("jsonpointer: index out of bounds")
+	ErrNotFound = errors.New(`jsonpointer: value not found`)
+	// ErrOutOfRange indicates an index is out of range for an array or slice
+	ErrOutOfRange = errors.New("jsonpointer: index out of range")
 	// ErrInvalidReference indicates a reference is not reachable. This occurs
 	// when a primitive leaf node is reached and the reference is not empty.
 	ErrInvalidReference = errors.New("jsonpointer: bad reference")
@@ -72,12 +72,22 @@ type ptrError struct {
 }
 
 func (e *ptrError) Error() string {
-	return e.err.Error()
+	t, ok := e.Token()
+	fmt.Println("e.current", e.current)
+	fmt.Println("TOKEN ERROR", t, ok)
+	if ok {
+		return fmt.Sprintf(`"%v for token "%s"  in reference "%v"`, e.err.Error(), t, e.ptr)
+	}
+	return fmt.Sprintf(`"%v" for reference "%v"`, e.err.Error(), e.ptr)
 }
 
 // Unwrap returns the underlying error.
 func (e *ptrError) Unwrap() error {
 	return e.err
+}
+
+func (e *ptrError) updateState(s *state) {
+	e.state = *s
 }
 
 // JSONPointer returns the initial JSONPointer.
@@ -216,4 +226,61 @@ func (e *valueError) Error() string {
 
 func (e *valueError) ValueType() reflect.Type {
 	return e.valuetype
+}
+
+func updateErrorState(err error, s *state) {
+	if e, ok := err.(interface{ updateState(s *state) }); ok {
+		e.updateState(s)
+	}
+}
+
+// IndexError indicates an error occurred with regards to an index of a slice or
+// array. The error may be wrapped in an Error if it is returned from an operation on a
+// JSON Pointer.
+//
+// err.Index() will return -1 if:
+//
+// - the source or destination is an array, token is equal to "-",
+// and the array does not have a zero value.
+//
+// - the token can not be parsed as an int
+//
+type IndexError interface {
+	MaxIndex() int
+	Index() int
+	Error() string
+	Unwrap() error
+}
+
+type indexError struct {
+	err      error
+	maxIndex int
+	index    int
+}
+
+func (e *indexError) MaxIndex() int {
+	return e.maxIndex
+}
+
+func (e *indexError) Index() int {
+	return e.index
+}
+
+func (e *indexError) Error() string {
+	if errors.Is(e.err, ErrOutOfRange) {
+		return fmt.Sprintf("%v; expected index to be less than next (%d) but is (%d)", ErrOutOfRange, e.maxIndex, e.index)
+	}
+	return fmt.Sprintf("%v for index %d of %d", e.err.Error(), e.index, e.maxIndex)
+}
+
+// AsIndexError is a convenience function which calls calls errors.As, returning
+// err as an IndexError and true or nil and false if err can not be assigned to
+// an IndexError
+func (e *indexError) AsIndexError(err error) (IndexError, bool) {
+	var ie IndexError
+	return ie, errors.As(err, &ie)
+}
+
+func (e *indexError) Unwrap() error {
+	return e.err
 }

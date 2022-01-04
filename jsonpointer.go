@@ -70,18 +70,33 @@ func (p JSONPointer) String() string {
 	return string(p)
 }
 
-// AppendString encodes and appends token to value of p and returns the new
+// Append appends token to the end of reference p and returns the new JSONPointer.
+//
+// Note: token is not encoded. Use p.AppendString to encode and append the
+// token.
+func (p JSONPointer) Append(token Token) JSONPointer {
+	return p + "/" + token.ptr()
+}
+
+// AppendString encodes and appends token to the value of p and returns the new
 // JSONPointer.
 func (p JSONPointer) AppendString(token string) JSONPointer {
 	return p.Append(Token(encoder.Replace(token)))
 }
 
-// Append appends token to valuœe of p and returns the new JSONPointer.
+// Preppend prepends token to the beginning of the value of p and returns the
+// resulting JSONPointer.
 //
-// Note: token is not encoded. Use p.AppendString to encode and append the
+// Note: token is not encoded. Use p.PrependString to encode and prepend the
 // token.
-func (p JSONPointer) Append(token Token) JSONPointer {
-	return JSONPointer(p + "/" + token.ptr())
+func (p JSONPointer) Prepend(token Token) JSONPointer {
+	return "/" + token.ptr() + p
+}
+
+// PrependString encodes and prepends token to the value of p and returns the new
+// JSONPointer.
+func (p JSONPointer) PrependString(token string) JSONPointer {
+	return p.Prepend(Token(encoder.Replace(token)))
 }
 
 func (p JSONPointer) Validate() error {

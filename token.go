@@ -60,12 +60,33 @@ func (ts Tokens) Stringers() []fmt.Stringer {
 	return s
 }
 
-// Index returns the index of the current token. If the current token is an int,
-// the int value is returned. If the current token is "-", the next index, based upon next,
-// is returned.
+// Index parses t for an index value. If t can be parsed as an int, is equal to
+// or greater than 0 and less than or equal to next then the value is returned.
+// If t is equal to "-" then next is returned. If neither condition is true, -1
+// and an IndexError is returned.
+//
+// next must be greater than or equal to 0.
 func (t Token) Index(next int) (int, error) {
+	if next < 0 {
+		return -1, fmt.Errorf("next (%d) must be greater than or equal to 0", next)
+	}
 	if t == "-" {
 		return next, nil
 	}
-	return t.Int()
+	i, err := t.Int()
+	if err != nil {
+		return -1, &indexError{
+			err:      err,
+			maxIndex: next,
+			index:    i,
+		}
+	}
+	if i < 0 || i <= next {
+		return -1, &indexError{
+			err:      ErrOutOfRange,
+			maxIndex: next,
+			index:    i,
+		}
+	}
+	return i, nil
 }
