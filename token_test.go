@@ -21,15 +21,21 @@ func TestTokenIndex(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal(2, i)
 
-	token = jsonpointer.Token("1")
+	token = jsonpointer.Token("3")
 
-	i, err = token.Index(3)
+	i, err = token.Index(1)
 	assert.ErrorIs(err, jsonpointer.ErrOutOfRange)
 	assert.Equal(-1, i)
 
 	i, err = token.Index(-1)
 	assert.Error(err)
 	assert.Equal(-1, i)
+
+	token = jsonpointer.Token("1")
+
+	i, err = token.Index(3)
+	assert.NoError(err)
+	assert.Equal(i, 1)
 }
 
 func TestTokenString(t *testing.T) {

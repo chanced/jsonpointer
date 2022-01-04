@@ -2,8 +2,10 @@ package jsonpointer
 
 import (
 	"encoding"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"sync"
@@ -12,8 +14,11 @@ import (
 var (
 	// valinfoPool         sync.Pool
 	statePool           sync.Pool
-	jsonType            = reflect.TypeOf(RawJSON{})
+	jsonType            = reflect.TypeOf(JSON{})
 	textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+	byteSliceType       = reflect.TypeOf([]byte{})
+	readerType          = reflect.TypeOf(io.Reader(nil))
+	writerType          = reflect.TypeOf(io.Writer(nil))
 )
 
 func newState(ptr JSONPointer, op Operation) *state {
@@ -43,7 +48,7 @@ func (s state) Operation() Operation {
 	return s.op
 }
 
-func (s *state) setValue(dst reflect.Value, val reflect.Value) error {
+func (s state) setValue(dst reflect.Value, val reflect.Value) error {
 	switch dst.Kind() {
 	case reflect.Interface:
 		if !dst.CanInterface() {
@@ -52,14 +57,20 @@ func (s *state) setValue(dst reflect.Value, val reflect.Value) error {
 		}
 		return s.setValue(dst.Elem(), val)
 	case reflect.Ptr:
-		if val.Type().AssignableTo(dst.Type().Elem()) {
+		switch {
+		case val.Type().AssignableTo(dst.Type().Elem()):
 			dst.Elem().Set(val)
 			return nil
-		} else {
-			return newValueError(ErrNotAssignable, s, dst.Type(), val.Type())
+		case val.Type().AssignableTo(readerType):
+			panic("reader not implemented")
+		case val.Type().AssignableTo(byteSliceType):
+			// if src is []byte and dst is not then we unmarshal the json
+			return json.Unmarshal(val.Interface().([]byte), dst.Interface())
 		}
-
+		// none of the above is true
+		return newValueError(ErrNotAssignable, s, dst.Type(), val.Type())
 	default:
+		// this should never be reached
 		panic("can not assign to non-pointer")
 	}
 }
@@ -84,21 +95,21 @@ func (s *state) resolve(v reflect.Value) (reflect.Value, error) {
 		typ := v.Type()
 		t, err = s.nextToken()
 		if err != nil {
-			return v, newError(err, s, typ)
+			return v, newError(err, *s, typ)
 		}
 		v, err = s.resolveNext(v, t)
 		if err == nil && v.Kind() == reflect.Invalid {
-			err = newError(ErrNotFound, s, typ)
+			err = newError(ErrNotFound, *s, typ)
 		}
 		if err != nil {
 			s.current = s.current.Prepend(t)
-			updateErrorState(err, s)
+			updateErrorState(err, *s)
 			return v, err
 		}
 	}
 }
 
-func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
+func (s state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
 	if v.Type().NumMethod() > 0 && v.CanInterface() {
 		if resolver, ok := v.Interface().(Resolver); ok {
 			// storing the current pointer in the event the Resolver mutates it and
@@ -126,12 +137,11 @@ func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
 	case reflect.Array:
 		return s.resolveArrayIndex(v, t)
 	case reflect.Slice:
-		return s.resolveSlice(v)
+		return s.resolveSlice(v, t)
 	case reflect.Struct:
 		return s.resolveStructField(v, t)
 	default:
-		// TODO: handle other types or return an error
-		panic("unexpected type: " + v.Type().String())
+		return v, newError(ErrInvalidReference, s, v.Type())
 	}
 }
 
@@ -151,7 +161,7 @@ func (s *state) resolveResolver(r Resolver) (reflect.Value, error) {
 	return reflect.ValueOf(res), nil
 }
 
-func (s *state) resolveMapIndex(v reflect.Value, t Token) (reflect.Value, error) {
+func (s state) resolveMapIndex(v reflect.Value, t Token) (reflect.Value, error) {
 	kv, err := s.mapKey(v, t)
 	if err != nil {
 		return kv, err
@@ -160,10 +170,14 @@ func (s *state) resolveMapIndex(v reflect.Value, t Token) (reflect.Value, error)
 }
 
 func (s *state) resolveArrayIndex(v reflect.Value, t Token) (reflect.Value, error) {
-	panic("not implemented") // TODO: impl
+	i, err := s.arrayIndex(v, t)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	return v.Index(i), nil
 }
 
-func (s *state) resolveStructField(v reflect.Value, t Token) (reflect.Value, error) {
+func (s state) resolveStructField(v reflect.Value, t Token) (reflect.Value, error) {
 	var fields structFields
 	if v.Type().Kind() == reflect.Ptr {
 		fields = cachedTypeFields(v.Type().Elem())
@@ -189,11 +203,22 @@ func (s *state) resolveStructField(v reflect.Value, t Token) (reflect.Value, err
 	return v.FieldByIndex(f.index), nil
 }
 
-func (s *state) resolveSlice(v reflect.Value) (reflect.Value, error) {
-	panic("not implemented") // TODO: impl
+func (s state) resolveSlice(v reflect.Value, t Token) (reflect.Value, error) {
+	i, err := s.sliceIndex(v, t)
+	if err != nil {
+		return reflect.Value{}, newError(err, s, v.Type())
+	}
+	if i >= v.Len() {
+		return reflect.Value{}, newError(&indexError{
+			err:      ErrOutOfRange,
+			maxIndex: v.Len() - 1,
+			index:    i,
+		}, s, v.Type())
+	}
+	return v.Index(i), nil
 }
 
-func (s *state) deleteMapIndex(v reflect.Value) error {
+func (s state) deleteMapIndex(v reflect.Value) error {
 	panic("not impl") // TODO: impl
 }
 
@@ -212,7 +237,7 @@ func (s *state) assign(src reflect.Value, value interface{}) error {
 		if isError(err) {
 			return err
 		}
-		return newError(err, s, sv.Type())
+		return newError(err, *s, sv.Type())
 	}
 	v := reflect.ValueOf(value)
 	_ = v
@@ -258,26 +283,11 @@ func (s *state) delete(src reflect.Value) error {
 	panic("not implemented") // TODO: impl
 }
 
-func (s *state) index(src reflect.Value, t Token) (reflect.Value, error) {
-	switch src.Kind() {
-	case reflect.Interface, reflect.Ptr:
-		// return s.index(src.Elem(), t)
-	case reflect.Array:
-		return s.arrayIndex(src, t)
-	case reflect.Slice:
-		return s.sliceIndex(src, t)
-	}
-	panic("index not implemented")
+func (s state) sliceIndex(src reflect.Value, t Token) (int, error) {
+	return t.Index(src.Len())
 }
 
-func (s *state) sliceIndex(src reflect.Value, t Token) (reflect.Value, error) {
-	i, err := t.Index(src.Len())
-	_ = i
-	_ = err
-	panic("sliceIndex is not implemented")
-}
-
-func (s *state) arrayIndex(src reflect.Value, t Token) (reflect.Value, error) {
+func (s state) arrayIndex(src reflect.Value, t Token) (int, error) {
 	// if t == "-" then we attempt to get the last non-zero index
 	z := -1
 	if t == "-" {
@@ -288,20 +298,20 @@ func (s *state) arrayIndex(src reflect.Value, t Token) (reflect.Value, error) {
 			z = i
 		}
 		if z < 0 {
-			return reflect.Value{}, newError(&indexError{
+			return -1, newError(&indexError{
 				err:      ErrOutOfRange,
 				maxIndex: src.Len() - 1,
 				index:    -1,
 			}, s, src.Type())
 		}
-		return reflect.ValueOf(z), nil
+		return z, nil
 	}
 
-	z, err := t.Index(src.Type().Len())
+	z, err := t.Index(src.Type().Len() - 1)
 	if err != nil {
-		return reflect.Value{}, newError(err, s, src.Type())
+		return z, newError(err, s, src.Type())
 	}
-	return reflect.ValueOf(z), nil
+	return z, nil
 }
 
 func (s *state) mapKey(src reflect.Value, t Token) (reflect.Value, error) {

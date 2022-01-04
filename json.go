@@ -1,3 +1,3 @@
 package jsonpointer
 
-type RawJSON []byte
+type JSON []byte

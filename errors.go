@@ -57,11 +57,11 @@ func AsError(err error) (Error, bool) {
 	return e, errors.As(err, &e)
 }
 
-func newError(err error, s *state, typ reflect.Type) *ptrError {
+func newError(err error, s state, typ reflect.Type) *ptrError {
 	return &ptrError{
 		err:   err,
 		typ:   typ,
-		state: *s,
+		state: s,
 	}
 }
 
@@ -73,8 +73,6 @@ type ptrError struct {
 
 func (e *ptrError) Error() string {
 	t, ok := e.Token()
-	fmt.Println("e.current", e.current)
-	fmt.Println("TOKEN ERROR", t, ok)
 	if ok {
 		return fmt.Sprintf(`"%v for token "%s"  in reference "%v"`, e.err.Error(), t, e.ptr)
 	}
@@ -86,8 +84,8 @@ func (e *ptrError) Unwrap() error {
 	return e.err
 }
 
-func (e *ptrError) updateState(s *state) {
-	e.state = *s
+func (e *ptrError) updateState(s state) {
+	e.state = s
 }
 
 // JSONPointer returns the initial JSONPointer.
@@ -126,13 +124,13 @@ func AsKeyError(err error) (KeyError, bool) {
 	return e, errors.As(err, &e)
 }
 
-func newKeyError(err error, s *state, typ reflect.Type, keyValue interface{}, keyType reflect.Type) *keyError {
+func newKeyError(err error, s state, typ reflect.Type, keyValue interface{}, keyType reflect.Type) *keyError {
 	if e, ok := err.(*keyError); ok {
 		return e
 	}
 	return &keyError{
 		ptrError: ptrError{
-			state: *s,
+			state: s,
 			err:   err,
 			typ:   typ,
 		},
@@ -204,11 +202,11 @@ func AsValueError(err error) (ValueError, bool) {
 	return e, errors.As(err, &e)
 }
 
-func newValueError(err error, s *state, typ reflect.Type, valType reflect.Type) *valueError {
+func newValueError(err error, s state, typ reflect.Type, valType reflect.Type) *valueError {
 	return &valueError{
 		valuetype: valType,
 		ptrError: ptrError{
-			state: *s,
+			state: s,
 			err:   err,
 			typ:   typ,
 		},
@@ -228,8 +226,8 @@ func (e *valueError) ValueType() reflect.Type {
 	return e.valuetype
 }
 
-func updateErrorState(err error, s *state) {
-	if e, ok := err.(interface{ updateState(s *state) }); ok {
+func updateErrorState(err error, s state) {
+	if e, ok := err.(interface{ updateState(s state) }); ok {
 		e.updateState(s)
 	}
 }

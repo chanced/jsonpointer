@@ -81,7 +81,7 @@ func (t Token) Index(next int) (int, error) {
 			index:    i,
 		}
 	}
-	if i < 0 || i <= next {
+	if i < 0 || i > next {
 		return -1, &indexError{
 			err:      ErrOutOfRange,
 			maxIndex: next,

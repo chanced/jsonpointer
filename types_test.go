@@ -14,34 +14,34 @@ type Root struct {
 type Nested struct {
 	Inline         `json:",inline"`
 	Embedded       `json:"embedded"`
-	InterContainer InterContainer         `json:",inline"`
-	Nested         *Nested                `json:"nested"`
-	String         string                 `json:"string"`
-	Int            int                    `json:"int"`
-	IntPtr         *int                   `json:"intptr"`
-	Float          float64                `json:"float"`
-	FloatPtr       *float64               `json:"floatptr"`
+	InterContainer InterContainer         `json:"interface"`
+	Nested         *Nested                `json:"nested,omitempty"`
+	String         string                 `json:"string,omitempty"`
+	Int            int                    `json:"int,omitempty"`
+	IntPtr         *int                   `json:"intptr,omitempty"`
+	Float          float64                `json:"float,omitempty"`
+	FloatPtr       *float64               `json:"floatptr,omitempty"`
 	Bool           bool                   `json:"bool"`
-	BoolPtr        *bool                  `json:"boolptr"`
-	Uint64         uint64                 `json:"uint64"`
-	EntryMap       map[string]*Entry      `json:"entrymap"`
-	StrMap         map[string]string      `json:"strmap"`
-	IntMap         map[int]int            `json:"intmap"`
-	UintMap        map[uint64]uint64      `json:"uintmap"`
-	CustomMap      map[Key]string         `json:"custommap"`
-	AnonStruct     struct{ Value string } `json:"anon"`
-	StrSlice       []string               `json:"strslice"`
-	IntSlice       []int                  `json:"intslice"`
-	EntrySlice     []*Entry               `json:"entryslice"`
-	StrArray       [3]string              `json:"strarray"`
-	IntArray       [3]int                 `json:"intarray"`
+	BoolPtr        *bool                  `json:"boolptr,omitempty"`
+	Uint64         uint64                 `json:"uint64,omitempty"`
+	EntryMap       map[string]*Entry      `json:"entrymap,omitempty"`
+	StrMap         map[string]string      `json:"strmap,omitempty"`
+	IntMap         map[int]int            `json:"intmap,omitempty"`
+	UintMap        map[uint64]uint64      `json:"uintmap,omitempty"`
+	CustomMap      map[Key]string         `json:"custommap,omitempty"`
+	AnonStruct     struct{ Value string } `json:"anon,omitempty"`
+	StrSlice       []string               `json:"strslice,omitempty"`
+	IntSlice       []int                  `json:"intslice,omitempty"`
+	EntrySlice     []*Entry               `json:"entryslice,omitempty"`
+	StrArray       [3]string              `json:"strarray,omitempty"`
+	IntArray       [3]int                 `json:"intarray,omitempty"`
 	AnonStructPtr  *struct {
-		Value string `json:"value"`
-	} `json:"anonPtr"`
+		Value string
+	} `json:"anonptr"`
 }
 
 type InterContainer struct {
-	Interface Interface `json:"interface"`
+	Interface `json:",inline"`
 }
 
 type Interface interface {
@@ -177,19 +177,19 @@ func (k *Key) UnmarshalText(data []byte) error {
 	return nil
 }
 
-func (k *Key) MarshalText() ([]byte, error) {
+func (k Key) MarshalText() ([]byte, error) {
 	return []byte(k.key), nil
 }
 
 type Entry struct {
-	Name  string  `json:"name"`
-	Value float64 `json:"value"`
+	Name  string  `json:"name,omitempty"`
+	Value float64 `json:"value,omitempty"`
 }
 
 type Inline struct {
-	InlineStr string `json:"inlineStr"`
+	InlineStr string `json:"inline,omitempty"`
 }
 
 type Embedded struct {
-	EmbeddedStr string `json:"embeddedStr"`
+	Value string `json:"value,omitempty"`
 }
