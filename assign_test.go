@@ -1,22 +1,47 @@
 package jsonpointer_test
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/chanced/jsonpointer"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAssignStructField(t *testing.T) {
-	// assert := require.New(t)
-	// se := structentry{}
-	// assign := newAssignState("/f3")
-	// err := assign.structField(
-	// 	JSONPointer("/f3"),
-	// 	reflect.TypeOf(&se),
-	// 	reflect.ValueOf(&se),
-	// 	reflect.ValueOf("value"),
-	// )
+	assert := require.New(t)
 
-	// assert.NoError(err)
-	// assert.Equal("value", se.F3)
+	r := Root{
+		Nested: Nested{
+			String: "",
+		},
+	}
+
+	tests := []struct {
+		ptr   jsonpointer.JSONPointer
+		value interface{}
+		err   error
+		run   func(v interface{})
+	}{
+		{"/nested/str", "strval", nil, func(val interface{}) {
+			assert.Equal(val, r.Nested.String)
+			fmt.Println(r.Nested.String)
+		}},
+		{"/nestedptr/str", "x", nil, func(val interface{}) {
+			assert.Equal(val, r.NestedPtr.String)
+			fmt.Println(r.NestedPtr.String)
+		}},
+	}
+
+	for i, test := range tests {
+		err := jsonpointer.Assign(test.ptr, &r, test.value)
+		if test.err != nil {
+			assert.ErrorIs(err, test.err, "test %d, pointer %s", i, test.ptr)
+		} else {
+			assert.NoError(err)
+			test.run(test.value)
+		}
+	}
 }
 
 func TestAssignMapValue(t *testing.T) {

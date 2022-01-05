@@ -24,7 +24,7 @@ func TestResolveField(t *testing.T) {
 			Float:         34.21,
 			FloatPtr:      fp,
 			Inline:        Inline{InlineStr: "inline value"},
-			Nested:        &Nested{String: "nested value"},
+			Nested:        &Nested{String: "deeply nested value"},
 			Embedded:      Embedded{Value: "embedded value"},
 			Bool:          true,
 			BoolPtr:       bp,
@@ -37,25 +37,29 @@ func TestResolveField(t *testing.T) {
 		expectedval interface{}
 		expectederr error
 	}{
-		{"/nested/string", "strval", nil},
+		{"/nested/str", "strval", nil},
 		{"/nested/float", 34.21, nil},
 		{"/nested/floatptr", fp, nil},
 		{"/nested/inline", "inline value", nil},
-		{"/nested/nested/string", "nested value", nil},
+		{"/nested/nested/str", "deeply nested value", nil},
 		{"/nested/bool", true, nil},
 		{"/nested/boolptr", bp, nil},
 		{"/nested/anonptr/value", "anon struct value", nil},
+		{"/nested/private", nil, jsonpointer.ErrUnexportedField},
+		{"/nested/invalid", nil, jsonpointer.ErrNotFound},
+		{"/nested/empty/str", nil, jsonpointer.ErrUnreachable},
+		{"/nested/empty/str", nil, jsonpointer.ErrNotFound},
 	}
 
 	for i, test := range tests {
 		var val interface{}
 		err := jsonpointer.Resolve(r, test.ptr, &val)
 		if test.expectederr != nil {
-			assert.ErrorIs(err, test.expectederr, "test %d", i)
+			assert.ErrorIs(err, test.expectederr, "test %d, pointer %s", i, test.ptr)
 		} else {
 			assert.NoError(err)
 		}
-		assert.Equal(test.expectedval, val, "test %d", i)
+		assert.Equal(test.expectedval, val, "test %d, pointer %s", i, test.ptr)
 	}
 }
 

@@ -31,9 +31,9 @@ var (
 	ErrNotFound = errors.New(`jsonpointer: value not found`)
 	// ErrOutOfRange indicates an index is out of range for an array or slice
 	ErrOutOfRange = errors.New("jsonpointer: index out of range")
-	// ErrInvalidReference indicates a reference is not reachable. This occurs
+	// ErrUnreachable indicates a reference is not reachable. This occurs
 	// when a primitive leaf node is reached and the reference is not empty.
-	ErrInvalidReference = errors.New("jsonpointer: bad reference")
+	ErrUnreachable = fmt.Errorf("%w due to being unreachable", ErrNotFound)
 )
 
 // Error is a base error type returned from Resolve, Assign, and Delete.
@@ -74,7 +74,7 @@ type ptrError struct {
 func (e *ptrError) Error() string {
 	t, ok := e.Token()
 	if ok {
-		return fmt.Sprintf(`"%v for token "%s"  in reference "%v"`, e.err.Error(), t, e.ptr)
+		return fmt.Sprintf(`"%v for token "%s" in reference "%v"`, e.err.Error(), t, e.ptr)
 	}
 	return fmt.Sprintf(`"%v" for reference "%v"`, e.err.Error(), e.ptr)
 }

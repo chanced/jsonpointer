@@ -9,16 +9,19 @@ import (
 	"reflect"
 	"sort"
 	"sync"
+
+	"github.com/sanity-io/litter"
 )
 
 var (
 	// valinfoPool         sync.Pool
 	statePool           sync.Pool
-	jsonType            = reflect.TypeOf(JSON{})
-	textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
-	byteSliceType       = reflect.TypeOf([]byte{})
-	readerType          = reflect.TypeOf(io.Reader(nil))
-	writerType          = reflect.TypeOf(io.Writer(nil))
+	typeJSON            = reflect.TypeOf(JSON{})
+	typeAssigner        = reflect.TypeOf((*Assigner)(nil)).Elem()
+	typeByteSlice       = reflect.TypeOf([]byte{})
+	typeReader          = reflect.TypeOf((*io.Reader)(nil)).Elem()
+	typeWriter          = reflect.TypeOf((*io.Writer)(nil)).Elem()
+	typeTextUnmarshaler = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
 )
 
 func newState(ptr JSONPointer, op Operation) *state {
@@ -48,68 +51,71 @@ func (s state) Operation() Operation {
 	return s.op
 }
 
-func (s state) setValue(dst reflect.Value, val reflect.Value) error {
+func (s *state) setValue(dst reflect.Value, v reflect.Value) error {
 	switch dst.Kind() {
 	case reflect.Interface:
 		if !dst.CanInterface() {
-			// TODO: remove this panic. return an error
 			panic("can not interface")
 		}
-		return s.setValue(dst.Elem(), val)
+		return s.setValue(dst.Elem(), v)
+
 	case reflect.Ptr:
 		switch {
-		case val.Type().AssignableTo(dst.Type().Elem()):
-			dst.Elem().Set(val)
+		case v.Type().AssignableTo(dst.Type().Elem()):
+			dst.Elem().Set(v)
 			return nil
-		case val.Type().AssignableTo(readerType):
+		case v.Type().AssignableTo(typeReader):
 			panic("reader not implemented")
-		case val.Type().AssignableTo(byteSliceType):
+		case v.Type().AssignableTo(typeByteSlice):
 			// if src is []byte and dst is not then we unmarshal the json
-			return json.Unmarshal(val.Interface().([]byte), dst.Interface())
+			return json.Unmarshal(v.Interface().([]byte), dst.Interface())
 		}
 		// none of the above is true
-		return newValueError(ErrNotAssignable, s, dst.Type(), val.Type())
+		return newValueError(ErrNotAssignable, *s, dst.Type(), v.Type())
 	default:
 		// this should never be reached
 		panic("can not assign to non-pointer")
 	}
 }
 
-func (s *state) nextToken() (Token, error) {
-	var t Token
-	var ok bool
-	if s.current, t, ok = s.current.Next(); !ok {
-		return "", fmt.Errorf("unexpected end of JSON pointer %v", s.current)
-	}
-	return t, nil
-}
-
 func (s *state) resolve(v reflect.Value) (reflect.Value, error) {
 	var t Token
 	var err error
+	var ok bool
 	for {
-		if s.current.IsRoot() {
+		cur := s.current
+		if cur.IsRoot() {
 			return v, nil
 		}
-
 		typ := v.Type()
-		t, err = s.nextToken()
+		if s.current, t, ok = cur.Next(); !ok {
+			return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", s.current)
+		}
 		if err != nil {
 			return v, newError(err, *s, typ)
 		}
 		v, err = s.resolveNext(v, t)
+		if err == nil {
+			switch v.Kind() {
+			case reflect.Interface, reflect.Ptr, reflect.Map, reflect.Slice:
+				if v.IsNil() && !cur.IsRoot() {
+					return v, newError(ErrUnreachable, *s, typ)
+				}
+			}
+		}
+
 		if err == nil && v.Kind() == reflect.Invalid {
 			err = newError(ErrNotFound, *s, typ)
 		}
 		if err != nil {
-			s.current = s.current.Prepend(t)
+			s.current = cur.Prepend(t)
 			updateErrorState(err, *s)
 			return v, err
 		}
 	}
 }
 
-func (s state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
+func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
 	if v.Type().NumMethod() > 0 && v.CanInterface() {
 		if resolver, ok := v.Interface().(Resolver); ok {
 			// storing the current pointer in the event the Resolver mutates it and
@@ -120,7 +126,7 @@ func (s state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
 			if err != nil {
 				// if it isn't a yield operation, return the error
 				if !errors.Is(err, YieldOperation) {
-					return rv, newError(err, s, reflect.TypeOf(rv))
+					return rv, newError(err, *s, reflect.TypeOf(rv))
 				}
 				// otherwise restore the pointer to the previous state
 			}
@@ -141,7 +147,7 @@ func (s state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
 	case reflect.Struct:
 		return s.resolveStructField(v, t)
 	default:
-		return v, newError(ErrInvalidReference, s, v.Type())
+		return v, newError(ErrUnreachable, *s, v.Type())
 	}
 }
 
@@ -184,6 +190,7 @@ func (s state) resolveStructField(v reflect.Value, t Token) (reflect.Value, erro
 	} else {
 		fields = cachedTypeFields(v.Type())
 	}
+
 	var f *field
 	if i, ok := fields.nameIndex[t.String()]; ok {
 		f = &fields.list[i]
@@ -197,6 +204,10 @@ func (s state) resolveStructField(v reflect.Value, t Token) (reflect.Value, erro
 		}
 	}
 	if f == nil {
+		fv, ok := v.Type().FieldByName(t.String())
+		if ok && !fv.IsExported() {
+			return reflect.Value{}, newError(ErrUnexportedField, s, v.Type())
+		}
 		return reflect.Value{}, newError(ErrNotFound, s, v.Type())
 	}
 
@@ -231,52 +242,116 @@ func (s state) CurrentJSONPointer() JSONPointer {
 	return s.current
 }
 
-func (s *state) assign(src reflect.Value, value interface{}) error {
-	sv, err := s.resolve(src)
+func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, error) {
+	var t Token
+	var err error
+	var ok bool
+	_ = t
+	_ = ok
+
+	// TODO: deref the current pointer and use that instead
+	if s.current.IsRoot() {
+		_, err := s.assignValue(dst, value)
+		fmt.Printf("--------------\nROOT\n\"%v\" => %v\n--------------\n", t, dst.Type())
+		return dst, err
+	}
+
+	s.current, t, ok = s.current.Next()
+	if !ok {
+		return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", s.current)
+	}
+
+	// can i just overwrite src?
+	var nd reflect.Value
+	nd, err = s.resolveNext(dst, t)
+	fmt.Printf("resolved: \"%v\" => %v\n", t, nd.Type())
 	if err != nil {
-		if isError(err) {
-			return err
+		return nd, err
+	}
+
+	shouldSet := false
+	if !nd.IsValid() {
+		switch dst.Kind() {
+		case reflect.Map, reflect.Slice:
+			shouldSet = true
+			nd = reflect.Zero(dst.Type().Elem())
+		default:
+			// TODO: figure out which other types would be invalid and remove this panic
+			panic("resolving an invalid value which is not an entry on a map/slice is not done")
 		}
-		return newError(err, *s, sv.Type())
 	}
-	v := reflect.ValueOf(value)
-	_ = v
-	// // if the current value implements Assigner then use it
-	// if sv.assigner != nil {
-	// 	return sv.assigner.AssignByJSONPointer(&s.current, value)
-	// }
 
-	// // if the value cannot be assigned, return an error
-	// if !v.Type().AssignableTo(sv.Type()) {
-	// 	return newValueError(ErrInvalidValue, s, sv.Type(), v.Type())
-	// }
-	// src.Set(sv.Value)
-	// return nil
-	// // getting the next pointer and token
-	// p, t, ok := s.current.Next()
-	// _ = t
-	// if !ok {
-	// 	// TODO: return error?
-	// 	// this should never happen
-	// 	panic("malformed token")
-	// }
+	// TODO: check if value can be assigned
 
+	if nd.CanAddr() {
+		nd = nd.Addr()
+	} else {
+		pv := reflect.New(nd.Type())
+		pv.Elem().Set(nd)
+		nd = pv
+	}
+
+	fmt.Printf("new dst: \"%v\" => %v\n", t, nd.Type())
+	fmt.Printf("cur dst: \"%v\" => %v\n", t, dst.Type())
+	_ = shouldSet
+	var nv reflect.Value
+	nv, err = s.assign(nd, value)
+
+	fmt.Printf("Prepending \"%v\" to \"%s\"\n", s.current, t)
+	s.current = s.current.Prepend(t)
+	fmt.Printf("new val: \"%v\" => %v\n", t, nv.Type())
 	if err != nil {
-		return err
+		return dst, err
 	}
-	panic("assign not impl")
 
-	// setting the current pointer to the new fragment
-	// s.current = p
-	// recurse into assign
-	// if err = s.assign(nv, value); err != nil {
-	// 	return err
-	// }
-	// // putting the fragment back
-	// s.current = s.current.Append(t)
-	// if !exists {
-	// }
-	return nil
+	fmt.Printf("calling assignValue(%v, %v) with current = %v, token = %v\n", nd.Type(), nv.Elem().Type(), s.current, t)
+	fmt.Printf("val: %v\n", value.Type())
+	fmt.Printf("dst: %v\n", dst.Type())
+	nd, err = s.assignValue(nd, nv.Elem())
+	if err != nil {
+		return nd, err
+	}
+
+	fmt.Printf("--------------\n\"%v\" => %v\n--------------\n", t, nd.Type())
+	return dst, nil
+}
+
+func (s *state) assignValue(dst reflect.Value, v reflect.Value) (reflect.Value, error) {
+	var err error
+	cur := s.current
+	fmt.Println("\nassignValue:")
+	fmt.Printf("current:  \"%s\"", cur)
+	fmt.Printf("\ndst:      %v", dst.Elem().Type())
+	fmt.Printf("\nvalue:    %v\n\n", v.Type())
+	fmt.Printf("---------------\nASSIGN VALUE:  ")
+	litter.Dump(v.Interface())
+	fmt.Println("---------------")
+	if dst.Type().Implements(typeAssigner) {
+		err = dst.Interface().(Assigner).AssignByJSONPointer(&cur, v)
+		if err != nil {
+			if !errors.Is(err, YieldOperation) {
+				return dst, newError(err, *s, dst.Type())
+			} else {
+				// the Assigner has yielded operation back to jsonpointer
+				// resetting current incase the Assigner mutated it
+				cur = s.current
+			}
+		}
+		// updating state to reflect the new token if it was set by assigner
+		s.current = cur
+		return dst, nil
+	}
+	if !dst.Elem().CanSet() {
+		return dst, newError(ErrNotAssignable, *s, dst.Type())
+	}
+
+	if v.Type().AssignableTo(dst.Elem().Type()) {
+		dst.Elem().Set(v)
+		return dst, nil
+	}
+	// TODO: replace with an error
+
+	panic("can not assign")
 }
 
 func (s *state) delete(src reflect.Value) error {
@@ -319,7 +394,7 @@ func (s *state) mapKey(src reflect.Value, t Token) (reflect.Value, error) {
 	var kv reflect.Value
 	// checks to see if the map's key implements encoding.TextUnmarshaler
 	// if so, we use that to unmarshal the key
-	if reflect.PtrTo(kt).Implements(textUnmarshalerType) {
+	if reflect.PtrTo(kt).Implements(typeTextUnmarshaler) {
 		kv = reflect.New(kt)
 		if err := kv.Interface().(encoding.TextUnmarshaler).UnmarshalText(t.Bytes()); err != nil {
 			return kv, &keyError{
@@ -384,26 +459,44 @@ func (s *state) mapKey(src reflect.Value, t Token) (reflect.Value, error) {
 	return kv, nil
 }
 
-func (s *state) setMapIndex(src reflect.Value, typ reflect.Type, v reflect.Value, token Token) error {
-	panic("not impl")
-	// kv, err := s.mapIndex(src, typ)
-	// if err != nil {
-	// 	return err
-	// }
-	// v.SetMapIndex(kv, v)
-	// return nil
+func (s *state) setSliceIndex(src reflect.Value, token Token, v reflect.Value) error {
+	e := src.Elem()
+	i, err := s.sliceIndex(e, token)
+	if err != nil {
+		return err
+	}
+	if i >= e.Len() {
+		src.Set(reflect.Append(e, v))
+		return nil
+	}
+	e.Index(i).Set(v)
+	return nil
 }
 
-func (s *state) assignStruct() error {
-	panic("not implemented") // TODO: impl
+func (s *state) setArrayIndex(src reflect.Value, token Token, v reflect.Value) error {
+	i, err := s.arrayIndex(src, token)
+	if err != nil {
+		return err
+	}
+	src.Index(i).Set(v)
+	return nil
 }
 
-func (s *state) setStructField(t Token, typ reflect.Type, src reflect.Value, v reflect.Value) error {
+func (s *state) setMapIndex(src reflect.Value, token Token, v reflect.Value) error {
+	kv, err := s.mapKey(src, token)
+	if err != nil {
+		return err
+	}
+	v.SetMapIndex(kv, v)
+	return nil
+}
+
+func (s *state) setStructField(src reflect.Value, t Token, v reflect.Value) error {
 	var fields structFields
-	if typ.Kind() == reflect.Ptr {
-		fields = cachedTypeFields(typ.Elem())
+	if src.Kind() == reflect.Ptr {
+		fields = cachedTypeFields(src.Type().Elem())
 	} else {
-		fields = cachedTypeFields(typ)
+		fields = cachedTypeFields(src.Type())
 	}
 	var f *field
 	if i, ok := fields.nameIndex[t.String()]; ok {
@@ -420,7 +513,7 @@ func (s *state) setStructField(t Token, typ reflect.Type, src reflect.Value, v r
 	if f == nil {
 		return &ptrError{
 			err:   ErrInvalidKeyType,
-			typ:   typ,
+			typ:   src.Type(),
 			state: *s,
 		}
 	}
@@ -433,7 +526,7 @@ func (s *state) setStructField(t Token, typ reflect.Type, src reflect.Value, v r
 				if !subsrc.CanSet() {
 					return &ptrError{
 						state: *s,
-						typ:   typ,
+						typ:   src.Type(),
 						err: fmt.Errorf(
 							"jsonpointer: cannot set embedded pointer to unexported struct: %v",
 							subsrc.Type().Elem(),
@@ -450,7 +543,7 @@ func (s *state) setStructField(t Token, typ reflect.Type, src reflect.Value, v r
 	if !subsrc.CanSet() {
 		return &ptrError{
 			state: *s,
-			typ:   typ,
+			typ:   src.Type(),
 			err: fmt.Errorf(
 				"jsonpointer: cannot set embedded pointer to unexported struct: %v",
 				subsrc.Type().Elem(),
@@ -684,4 +777,8 @@ func (x byIndex) Less(i, j int) bool {
 		}
 	}
 	return len(x[i].index) < len(x[j].index)
+}
+
+func isValuePtrOrInterface(v reflect.Value) bool {
+	return v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface
 }

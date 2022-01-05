@@ -14,9 +14,11 @@ type Root struct {
 type Nested struct {
 	Inline         `json:",inline"`
 	Embedded       `json:"embedded"`
+	private        string
 	InterContainer InterContainer         `json:"interface"`
 	Nested         *Nested                `json:"nested,omitempty"`
-	String         string                 `json:"string,omitempty"`
+	Empty          *Nested                `json:"empty,omitempty"`
+	String         string                 `json:"str,omitempty"`
 	Int            int                    `json:"int,omitempty"`
 	IntPtr         *int                   `json:"intptr,omitempty"`
 	Float          float64                `json:"float,omitempty"`

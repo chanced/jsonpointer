@@ -33,5 +33,7 @@ func Assign(ptr JSONPointer, src interface{}, value interface{}) error {
 			typ:   sv.Type(),
 		}
 	}
-	return s.assign(sv, value)
+	// TODO: Handle bytes / reader
+	_, err := s.assign(sv, reflect.ValueOf(value))
+	return err
 }
