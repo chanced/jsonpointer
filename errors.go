@@ -13,27 +13,51 @@ var (
 	//
 	// This error is returned by JSONPointer.Validate() which is called by
 	// Resolve, Assign, and Delete.
+	//
 	ErrMalformedToken = fmt.Errorf(`jsonpointer: reference must be empty or start with a "/"`)
+
 	// ErrNonPointer indicates a non-pointer value was passed to Assign.
+	//
 	ErrNonPointer = errors.New("jsonpointer: dst must be a pointer")
+
 	// ErrUnexportedField indicates the given path is not reachable due to being
 	// an unexported field.
+	//
 	ErrUnexportedField = errors.New("jsonpointer: unexported field")
+
 	// ErrInvalidKeyType indicates the key type is not supported.
 	//
 	// Custom key types must implement encoding.TextUnmarshaler
+	//
 	ErrInvalidKeyType = errors.New("jsonpointer: invalid key type")
+
 	// ErrNotAssignable indicates the type of the value is not assignable to the
 	// provided path.
+	//
 	ErrNotAssignable = errors.New("jsonpointer: invalid value type")
+
 	// ErrNotFound indicates a JSONPointer is not reachable from the root object
 	// (e.g. a nil pointer, missing map key).
+	//
 	ErrNotFound = errors.New(`jsonpointer: value not found`)
+
 	// ErrOutOfRange indicates an index is out of range for an array or slice
+	//
 	ErrOutOfRange = errors.New("jsonpointer: index out of range")
-	// ErrUnreachable indicates a reference is not reachable. This occurs
-	// when a primitive leaf node is reached and the reference is not empty.
+
+	// ErrUnreachable indicates a reference is not reachable. This occurs when
+	// resolving and a primitive (string, number, or bool) leaf node is reached
+	// and the reference is not empty.
+	//
 	ErrUnreachable = fmt.Errorf("%w due to being unreachable", ErrNotFound)
+
+	// ErrNilInterface is returned when assigning and a nil interface is
+	// reached.
+	//
+	// To solve this, the node containing the interface should implement
+	// jsonpoint.Resolver and return a non-nil implemention of the interface.
+	//
+	ErrNilInterface = errors.New("jsonpointer: can not assign due to nil interface")
 )
 
 // Error is a base error type returned from Resolve, Assign, and Delete.
@@ -281,4 +305,23 @@ func (e *indexError) AsIndexError(err error) (IndexError, bool) {
 
 func (e *indexError) Unwrap() error {
 	return e.err
+}
+
+type nilInterfaceError struct {
+	ptrError
+}
+
+func newNilInterfaceError(s state, typ reflect.Type) *nilInterfaceError {
+	return &nilInterfaceError{
+		ptrError: ptrError{
+			state: s,
+			err:   ErrNilInterface,
+			typ:   typ,
+		},
+	}
+}
+
+func (e *nilInterfaceError) Error() string {
+	t, _ := e.Token()
+	return fmt.Sprintf("jsonpointer: can not assign token \"%s\" of \"%s\" because %v is nil and can not be instantiated.", t, e.ptr, e.typ)
 }

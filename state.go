@@ -9,8 +9,6 @@ import (
 	"reflect"
 	"sort"
 	"sync"
-
-	"github.com/sanity-io/litter"
 )
 
 var (
@@ -252,7 +250,6 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 	// TODO: deref the current pointer and use that instead
 	if s.current.IsRoot() {
 		_, err := s.assignValue(dst, value)
-		fmt.Printf("--------------\nROOT\n\"%v\" => %v\n--------------\n", t, dst.Type())
 		return dst, err
 	}
 
@@ -264,18 +261,29 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 	// can i just overwrite src?
 	var nd reflect.Value
 	nd, err = s.resolveNext(dst, t)
-	fmt.Printf("resolved: \"%v\" => %v\n", t, nd.Type())
 	if err != nil {
 		return nd, err
 	}
 
 	shouldSet := false
+	switch nd.Kind() {
+	case reflect.Ptr:
+		if nd.IsNil() {
+			nd.Set(reflect.New(nd.Type().Elem()))
+		}
+	case reflect.Interface:
+		if nd.IsNil() {
+			return nd, newError(ErrUnreachable, *s, nd.Type())
+		}
+	}
+
 	if !nd.IsValid() {
-		switch dst.Kind() {
+		switch dst.Elem().Kind() {
 		case reflect.Map, reflect.Slice:
 			shouldSet = true
 			nd = reflect.Zero(dst.Type().Elem())
 		default:
+			fmt.Println(dst.Type())
 			// TODO: figure out which other types would be invalid and remove this panic
 			panic("resolving an invalid value which is not an entry on a map/slice is not done")
 		}
@@ -291,41 +299,26 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 		nd = pv
 	}
 
-	fmt.Printf("new dst: \"%v\" => %v\n", t, nd.Type())
-	fmt.Printf("cur dst: \"%v\" => %v\n", t, dst.Type())
 	_ = shouldSet
+
 	var nv reflect.Value
 	nv, err = s.assign(nd, value)
-
-	fmt.Printf("Prepending \"%v\" to \"%s\"\n", s.current, t)
 	s.current = s.current.Prepend(t)
-	fmt.Printf("new val: \"%v\" => %v\n", t, nv.Type())
+
 	if err != nil {
 		return dst, err
 	}
-
-	fmt.Printf("calling assignValue(%v, %v) with current = %v, token = %v\n", nd.Type(), nv.Elem().Type(), s.current, t)
-	fmt.Printf("val: %v\n", value.Type())
-	fmt.Printf("dst: %v\n", dst.Type())
 	nd, err = s.assignValue(nd, nv.Elem())
 	if err != nil {
 		return nd, err
 	}
-
-	fmt.Printf("--------------\n\"%v\" => %v\n--------------\n", t, nd.Type())
 	return dst, nil
 }
 
 func (s *state) assignValue(dst reflect.Value, v reflect.Value) (reflect.Value, error) {
 	var err error
 	cur := s.current
-	fmt.Println("\nassignValue:")
-	fmt.Printf("current:  \"%s\"", cur)
-	fmt.Printf("\ndst:      %v", dst.Elem().Type())
-	fmt.Printf("\nvalue:    %v\n\n", v.Type())
-	fmt.Printf("---------------\nASSIGN VALUE:  ")
-	litter.Dump(v.Interface())
-	fmt.Println("---------------")
+
 	if dst.Type().Implements(typeAssigner) {
 		err = dst.Interface().(Assigner).AssignByJSONPointer(&cur, v)
 		if err != nil {
