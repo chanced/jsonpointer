@@ -59,8 +59,7 @@ var (
 	//
 	ErrNilInterface = errors.New("jsonpointer: can not assign due to nil interface")
 
-	// ErrMalformedIndex indicates a syntax error in the index or a slice or an
-	// array.
+	// ErrMalformedIndex indicates a syntax error in the index or a slice or an array.
 	ErrMalformedIndex = errors.New("jsonpointer: malformed slice/array index")
 )
 
@@ -102,9 +101,9 @@ type ptrError struct {
 func (e *ptrError) Error() string {
 	t, ok := e.Token()
 	if ok {
-		return fmt.Sprintf(`"%v for token "%s" in reference "%v"`, e.err.Error(), t, e.ptr)
+		return fmt.Sprintf(`%v for token "%s" in reference "%v"`, e.err.Error(), t, e.ptr)
 	}
-	return fmt.Sprintf(`"%v" for reference "%v"`, e.err.Error(), e.ptr)
+	return fmt.Sprintf(`%v for reference "%v"`, e.err.Error(), e.ptr)
 }
 
 // Unwrap returns the underlying error.

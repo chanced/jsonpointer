@@ -1,12 +1,14 @@
 package jsonpointer
 
-import "reflect"
+import (
+	"reflect"
+)
 
 type Assigner interface {
 	AssignByJSONPointer(ptr *JSONPointer, value interface{}) error
 }
 
-func Assign(ptr JSONPointer, src interface{}, value interface{}) error {
+func Assign(dst interface{}, ptr JSONPointer, value interface{}) error {
 	if err := ptr.Validate(); err != nil {
 		return err
 	}
@@ -21,19 +23,29 @@ func Assign(ptr JSONPointer, src interface{}, value interface{}) error {
 	// }
 
 	if value == nil {
-		return Delete(src, ptr)
+		return Delete(dst, ptr)
 	}
-	sv := reflect.ValueOf(src)
+	dv := reflect.ValueOf(dst)
 	s := newState(ptr, Assigning)
 	defer s.Done()
-	if sv.Kind() != reflect.Ptr || sv.IsNil() {
+	if dv.Kind() != reflect.Ptr || dv.IsNil() {
 		return &ptrError{
 			state: *s,
 			err:   ErrNonPointer,
-			typ:   sv.Type(),
+			typ:   dv.Type(),
 		}
 	}
-	// TODO: Handle bytes / reader
-	_, err := s.assign(sv, reflect.ValueOf(value))
+
+	var tmp reflect.Value
+	if dv.Type().Elem().Kind() == reflect.Ptr {
+		tmp = dv
+		if dv.Elem().IsNil() {
+			dv = reflect.New(dv.Type().Elem().Elem())
+		} else {
+			dv = dv.Elem()
+		}
+	}
+	res, err := s.assign(dv, reflect.ValueOf(value))
+	tmp.Elem().Set(res)
 	return err
 }

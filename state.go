@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"sort"
 	"strconv"
 	"sync"
 )
@@ -115,19 +114,19 @@ func (s *state) resolve(v reflect.Value) (reflect.Value, error) {
 }
 
 func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
+	// fmt.Println("t", t)
+	// fmt.Println("nummethod", v.Type().NumMethod())
+	// fmt.Println("caninterface", v.CanInterface())
+	// fmt.Println("type", v.Type())
 	if v.Type().NumMethod() > 0 && v.CanInterface() {
 		if resolver, ok := v.Interface().(Resolver); ok {
-			// storing the current pointer in the event the Resolver mutates it and
-			// there is an error
-			rv, err := s.resolveResolver(resolver)
-			// if the Resolver returns an error, it can either be a YieldOperation
-			// which continues the flow or an actual error.
+			rv, err := s.resolveResolver(resolver, v, t)
 			if err != nil {
-				// if it isn't a yield operation, return the error
 				if !errors.Is(err, YieldOperation) {
-					return rv, newError(err, *s, reflect.TypeOf(rv))
+					return rv, err
 				}
-				// otherwise restore the pointer to the previous state
+			} else {
+				return rv, nil
 			}
 		}
 	}
@@ -150,18 +149,26 @@ func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
 	}
 }
 
-func (s *state) resolveResolver(r Resolver) (reflect.Value, error) {
+func (s *state) resolveResolver(r Resolver, rv reflect.Value, t Token) (reflect.Value, error) {
+	// storing the current pointer in the event the Resolver mutates it and
+	// there is an error
+	prev := s.current
+	cur := prev.Prepend(t)
+	s.current = cur
 	res, err := r.ResolveJSONPointer(&s.current, s.op)
 	if err != nil {
+		// if the Resolver returns an error, it can either be a YieldOperation
+		// which continues the flow or an actual error.
 		if errors.Is(err, YieldOperation) {
-			return reflect.Value{}, YieldOperation
+			return rv, newError(err, *s, reflect.TypeOf(rv))
 		}
-		rv := reflect.ValueOf(r)
-		return rv, &ptrError{
-			state: *s,
-			err:   err,
-			typ:   rv.Type(),
-		}
+		s.current = prev
+		return rv, YieldOperation
+	}
+	if s.current == cur {
+		// if the Resolver didn't mutate the pointer, then we
+		// restore it to the original value
+		s.current = prev
 	}
 	return reflect.ValueOf(res), nil
 }
@@ -174,7 +181,7 @@ func (s state) resolveMapIndex(v reflect.Value, t Token) (reflect.Value, error) 
 	return v.MapIndex(kv), nil
 }
 
-func (s *state) resolveArrayIndex(v reflect.Value, t Token) (reflect.Value, error) {
+func (s state) resolveArrayIndex(v reflect.Value, t Token) (reflect.Value, error) {
 	i, err := s.arrayIndex(v, t)
 	if err != nil {
 		return reflect.Value{}, err
@@ -252,16 +259,19 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 	var err error
 	var ok bool
 	// TODO: deref the current pointer and use that instead
-	if s.current.IsRoot() {
+
+	cur := s.current
+
+	if cur.IsRoot() {
 		_, err := s.assignValue(dst, value)
 		return dst, err
 	}
 
-	s.current, t, ok = s.current.Next()
-	if !ok {
-		return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", s.current)
-	}
+	s.current, t, ok = cur.Next()
 
+	if !ok {
+		return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", cur)
+	}
 	// can i just overwrite dst?
 	var nd reflect.Value
 	nd, err = s.resolveNext(dst, t)
@@ -272,6 +282,7 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 	switch nd.Kind() {
 	case reflect.Ptr:
 		if nd.IsNil() {
+			fmt.Println("nil: nd.Type().Elem()", nd.Type().Elem())
 			nd.Set(reflect.New(nd.Type().Elem()))
 		}
 	case reflect.Map:
@@ -287,6 +298,8 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 			return nd, newError(ErrUnreachable, *s, nd.Type())
 		}
 	case reflect.Invalid:
+		fmt.Println("INVALID VALUE")
+		fmt.Println(s.current)
 		switch dst.Type().Elem().Kind() {
 		case reflect.Map:
 			shouldSet = true
@@ -304,6 +317,8 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 				nd = reflect.New(nd.Type().Elem())
 			}
 		default:
+			fmt.Printf("dst type: %v\ndst.kind: %v\ndst.Elem().Kind(): %v\n", dst.Type(), dst.Kind(), dst.Type().Elem().Kind())
+			fmt.Printf("dst.Type().Elem().Kind():%v\n", dst.Type().Elem().Kind())
 			// TODO: figure out which other types would be invalid and remove this panic
 			panic("resolving an invalid value which is not an entry on a map/slice is not done")
 		}
@@ -319,9 +334,34 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 	var nv reflect.Value
 	nv, err = s.assign(nd, value)
 	s.current = s.current.Prepend(t)
+
 	if err != nil {
 		return dst, err
 	}
+
+	fmt.Println("nd.Type", nd.Type())
+	fmt.Println("nv.Type", nv.Type())
+	fmt.Println("nv.Elem.Type", nv.Elem().Type())
+	fmt.Println("nv.Elem.IsNil", nv.IsNil())
+	fmt.Println("dst.Type", dst.Type())
+
+	if dst.Type().Implements(typeAssigner) && !dst.IsNil() {
+		err = dst.Elem().Interface().(Assigner).AssignByJSONPointer(&cur, nv.Elem().Interface())
+		if err != nil {
+			if !errors.Is(err, YieldOperation) {
+				return dst, newError(err, *s, dst.Elem().Type())
+			} else {
+				// the Assigner has yielded operation back to jsonpointer
+				// resetting current incase the Assigner mutated it
+				cur = s.current
+			}
+		} else {
+			return dst, nil
+		}
+		// updating state to reflect the new token if it was set by assigner
+		s.current = cur
+	}
+
 	nd, err = s.assignValue(nd, nv.Elem())
 	if err != nil {
 		return nd, err
@@ -338,23 +378,6 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 }
 
 func (s *state) assignValue(dst reflect.Value, v reflect.Value) (reflect.Value, error) {
-	var err error
-	cur := s.current
-	if dst.Type().Implements(typeAssigner) {
-		err = dst.Interface().(Assigner).AssignByJSONPointer(&cur, v)
-		if err != nil {
-			if !errors.Is(err, YieldOperation) {
-				return dst, newError(err, *s, dst.Type())
-			} else {
-				// the Assigner has yielded operation back to jsonpointer
-				// resetting current incase the Assigner mutated it
-				cur = s.current
-			}
-		}
-		// updating state to reflect the new token if it was set by assigner
-		s.current = cur
-		return dst, nil
-	}
 	if !dst.Elem().CanSet() {
 		return dst, newError(ErrNotAssignable, *s, dst.Type())
 	}
@@ -364,7 +387,9 @@ func (s *state) assignValue(dst reflect.Value, v reflect.Value) (reflect.Value, 
 		return dst, nil
 	}
 	// TODO: replace with an error
-
+	fmt.Println("dst type:", dst.Type())
+	fmt.Println("val type:", v.Type())
+	fmt.Println("val kind:", v.Kind())
 	panic("can not assign")
 }
 
@@ -569,230 +594,3 @@ func (s *state) setMapIndex(m reflect.Value, token Token, v reflect.Value) error
 // }
 
 // type encoderFunc func(e *encodeState, v reflect.Value, opts encOpts)
-
-// A field represents a single field found in a struct.
-type field struct {
-	name      string
-	nameBytes []byte                 // []byte(name)
-	equalFold func(s, t []byte) bool // bytes.EqualFold or equivalent
-	tag       bool
-	index     []int
-	typ       reflect.Type
-}
-
-type structFields struct {
-	list      []field
-	nameIndex map[string]int
-}
-
-// cachedTypeFields is like typeFields but uses a cache to avoid repeated work.
-//
-// source: encoding/json/encode.go
-func cachedTypeFields(t reflect.Type) structFields {
-	if f, ok := fieldCache.Load(t); ok {
-		return f.(structFields)
-	}
-	f, _ := fieldCache.LoadOrStore(t, typeFields(t))
-	return f.(structFields)
-}
-
-var fieldCache sync.Map // map[reflect.Type]structFields
-
-// typeFields returns a list of fields that JSON should recognize for the given type.
-// The algorithm is breadth-first search over the set of structs to include - the top struct
-// and then any reachable anonymous structs.
-//
-// source: encoding/json/encode.go
-func typeFields(t reflect.Type) structFields {
-	// Anonymous fields to explore at the current level and the next.
-	current := []field{}
-	next := []field{{typ: t}}
-
-	// Count of queued names for current level and the next.
-	var count, nextCount map[reflect.Type]int
-
-	// Types already visited at an earlier level.
-	visited := map[reflect.Type]bool{}
-
-	// Fields found.
-	var fields []field
-
-	for len(next) > 0 {
-		current, next = next, current[:0]
-		count, nextCount = nextCount, map[reflect.Type]int{}
-
-		for _, f := range current {
-			if visited[f.typ] {
-				continue
-			}
-			visited[f.typ] = true
-
-			// Scan f.typ for fields to include.
-			for i := 0; i < f.typ.NumField(); i++ {
-				sf := f.typ.Field(i)
-				if sf.Anonymous {
-					t := sf.Type
-					if t.Kind() == reflect.Ptr {
-						t = t.Elem()
-					}
-					if !sf.IsExported() && t.Kind() != reflect.Struct {
-						// Ignore embedded fields of unexported non-struct types.
-						continue
-					}
-					// Do not ignore embedded fields of unexported struct types
-					// since they may have exported fields.
-				} else if !sf.IsExported() {
-					// Ignore unexported non-embedded fields.
-					continue
-				}
-				tag := sf.Tag.Get("json")
-				if tag == "-" {
-					continue
-				}
-
-				name, _ := parseTag(tag)
-
-				if !isValidTag(name) {
-					name = ""
-				}
-				index := make([]int, len(f.index)+1)
-				copy(index, f.index)
-				index[len(f.index)] = i
-
-				ft := sf.Type
-				if ft.Name() == "" && ft.Kind() == reflect.Ptr {
-					// Follow pointer.
-					ft = ft.Elem()
-				}
-				// Record found field and index sequence.
-				if name != "" || !sf.Anonymous || ft.Kind() != reflect.Struct {
-					tagged := name != ""
-					if name == "" {
-						name = sf.Name
-					}
-					field := field{
-						name:  name,
-						tag:   tagged,
-						index: index,
-						typ:   ft,
-					}
-					field.nameBytes = []byte(field.name)
-					field.equalFold = foldFunc(field.nameBytes)
-
-					fields = append(fields, field)
-					if count[f.typ] > 1 {
-						// If there were multiple instances, add a second,
-						// so that the annihilation code will see a duplicate.
-						// It only cares about the distinction between 1 or 2,
-						// so don't bother generating any more copies.
-						fields = append(fields, fields[len(fields)-1])
-					}
-					continue
-				}
-
-				// Record new anonymous struct to explore in next round.
-				nextCount[ft]++
-				if nextCount[ft] == 1 {
-					next = append(next, field{name: ft.Name(), index: index, typ: ft})
-				}
-			}
-		}
-	}
-
-	sort.Slice(fields, func(i, j int) bool {
-		x := fields
-		// sort field by name, breaking ties with depth, then
-		// breaking ties with "name came from json tag", then
-		// breaking ties with index sequence.
-		if x[i].name != x[j].name {
-			return x[i].name < x[j].name
-		}
-		if len(x[i].index) != len(x[j].index) {
-			return len(x[i].index) < len(x[j].index)
-		}
-		if x[i].tag != x[j].tag {
-			return x[i].tag
-		}
-		return byIndex(x).Less(i, j)
-	})
-
-	// Delete all fields that are hidden by the Go rules for embedded fields,
-	// except that fields with JSON tags are promoted.
-
-	// The fields are sorted in primary order of name, secondary order
-	// of field index length. Loop over names; for each name, delete
-	// hidden fields by choosing the one dominant field that survives.
-	out := fields[:0]
-	for advance, i := 0, 0; i < len(fields); i += advance {
-		// One iteration per name.
-		// Find the sequence of fields with the name of this first field.
-		fi := fields[i]
-		name := fi.name
-		for advance = 1; i+advance < len(fields); advance++ {
-			fj := fields[i+advance]
-			if fj.name != name {
-				break
-			}
-		}
-		if advance == 1 { // Only one field with this name
-			out = append(out, fi)
-			continue
-		}
-		dominant, ok := dominantField(fields[i : i+advance])
-		if ok {
-			out = append(out, dominant)
-		}
-	}
-
-	fields = out
-	sort.Sort(byIndex(fields))
-
-	// for i := range fields {
-	// 	f := &fields[i]
-	// 	f.encoder = typeEncoder(typeByIndex(t, f.index))
-	// }
-	nameIndex := make(map[string]int, len(fields))
-	for i, field := range fields {
-		nameIndex[field.name] = i
-	}
-	return structFields{fields, nameIndex}
-}
-
-// dominantField looks through the fields, all of which are known to
-// have the same name, to find the single field that dominates the
-// others using Go's embedding rules, modified by the presence of
-// JSON tags. If there are multiple top-level fields, the boolean
-// will be false: This condition is an error in Go and we skip all
-// the fields.
-func dominantField(fields []field) (field, bool) {
-	// The fields are sorted in increasing index-length order, then by presence of tag.
-	// That means that the first field is the dominant one. We need only check
-	// for error cases: two fields at top level, either both tagged or neither tagged.
-	if len(fields) > 1 && len(fields[0].index) == len(fields[1].index) && fields[0].tag == fields[1].tag {
-		return field{}, false
-	}
-	return fields[0], true
-}
-
-// byIndex sorts field by index sequence.
-type byIndex []field
-
-func (x byIndex) Len() int { return len(x) }
-
-func (x byIndex) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
-
-func (x byIndex) Less(i, j int) bool {
-	for k, xik := range x[i].index {
-		if k >= len(x[j].index) {
-			return false
-		}
-		if xik != x[j].index[k] {
-			return xik < x[j].index[k]
-		}
-	}
-	return len(x[i].index) < len(x[j].index)
-}
-
-func isValuePtrOrInterface(v reflect.Value) bool {
-	return v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface
-}

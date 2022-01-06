@@ -55,7 +55,7 @@ func TestResolveField(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		fmt.Printf("=== test %d, pointer %s", i, test.ptr)
+		fmt.Printf("=== RUN TestResolveField #%d, pointer %s\n", i, test.ptr)
 		var val interface{}
 		err := jsonpointer.Resolve(r, test.ptr, &val)
 		if test.expectederr != nil {
@@ -64,7 +64,7 @@ func TestResolveField(t *testing.T) {
 			assert.NoError(err)
 		}
 		assert.Equal(test.expectedval, val)
-		fmt.Printf("\n\tPASS\n")
+		fmt.Printf("---PASS\n")
 	}
 }
 
