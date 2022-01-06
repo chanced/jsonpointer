@@ -342,16 +342,18 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 	fmt.Println("nv.Elem.Type", nv.Elem().Type())
 	fmt.Println("nv.Elem.IsNil", nv.IsNil())
 	fmt.Println("dst.Type", dst.Type())
-	if dst.Type().NumMethod() > 0 && dst.CanInterface() {
+	if dst.Type().NumMethod() > 0 && dst.CanInterface() && dst.Type().Implements(typeAssigner) {
 		if assigner, ok := dst.Interface().(Assigner); ok {
 			fmt.Println("dst.Elem().Type()", dst.Elem().Type())
+			fmt.Println("dst.Type()", dst.Type())
+			fmt.Println("dst", litter.Sdump(dst.Interface()))
 			nve := nv.Elem().Interface()
 			fmt.Println("nve:", litter.Sdump(nve))
 			fmt.Println("assigner", assigner)
 			if assigner == nil {
 				fmt.Println("wtf is assigner nil for?")
 			}
-			assigner.AssignByJSONPointer(&cur, nve)
+			err = assigner.AssignByJSONPointer(&cur, nve)
 			if err != nil {
 				if !errors.Is(err, YieldOperation) {
 					return dst, newError(err, *s, dst.Elem().Type())
