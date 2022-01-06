@@ -249,6 +249,7 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 
 	// TODO: deref the current pointer and use that instead
 	if s.current.IsRoot() {
+		fmt.Printf("\nroot assigning %v to %v\n\n", value.Type(), dst.Type())
 		_, err := s.assignValue(dst, value)
 		return dst, err
 	}
@@ -266,28 +267,43 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 	}
 
 	shouldSet := false
+	fmt.Println("nd kind", nd.Kind())
 	switch nd.Kind() {
 	case reflect.Ptr:
 		if nd.IsNil() {
 			nd.Set(reflect.New(nd.Type().Elem()))
 		}
+	case reflect.Map:
+		if nd.IsNil() {
+			fmt.Println("map is nil")
+			nd.Set(reflect.MakeMap(nd.Type()))
+		}
+	case reflect.Slice:
+		if nd.IsNil() {
+			nd.Set(reflect.MakeSlice(nd.Type(), 0, 1))
+		}
 	case reflect.Interface:
 		if nd.IsNil() {
 			return nd, newError(ErrUnreachable, *s, nd.Type())
 		}
-	}
-
-	if !nd.IsValid() {
-		switch dst.Elem().Kind() {
+	case reflect.Invalid:
+		fmt.Printf("nd is invalid for token \"%s\" in pointer \"%s\"\n", t, s.current)
+		switch dst.Type().Elem().Kind() {
 		case reflect.Map, reflect.Slice:
 			shouldSet = true
-			nd = reflect.Zero(dst.Type().Elem())
+			fmt.Println("dst.Type().Elem().Elem()", dst.Type().Elem().Elem())
+			nd = reflect.Zero(dst.Type().Elem().Elem())
+			if nd.IsNil() {
+				nd = reflect.New(nd.Type().Elem())
+				fmt.Println("new nd type", nd.Type())
+			}
 		default:
 			fmt.Println(dst.Type())
 			// TODO: figure out which other types would be invalid and remove this panic
 			panic("resolving an invalid value which is not an entry on a map/slice is not done")
 		}
 	}
+	fmt.Println(nd.Kind())
 
 	// TODO: check if value can be assigned
 
@@ -298,19 +314,22 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 		pv.Elem().Set(nd)
 		nd = pv
 	}
-
-	_ = shouldSet
-
 	var nv reflect.Value
 	nv, err = s.assign(nd, value)
 	s.current = s.current.Prepend(t)
-
 	if err != nil {
 		return dst, err
 	}
+	_ = shouldSet
 	nd, err = s.assignValue(nd, nv.Elem())
 	if err != nil {
 		return nd, err
+	}
+	switch nd.Elem().Kind() {
+	case reflect.Map:
+		fmt.Println("nv type", nv.Type())
+		fmt.Println("map elem type", nd.Elem().Type())
+		s.setMapIndex(nd.Elem(), t, nv)
 	}
 	return dst, nil
 }
@@ -318,7 +337,7 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 func (s *state) assignValue(dst reflect.Value, v reflect.Value) (reflect.Value, error) {
 	var err error
 	cur := s.current
-
+	fmt.Printf("assigning %v to %v\n", v.Type(), dst.Type())
 	if dst.Type().Implements(typeAssigner) {
 		err = dst.Interface().(Assigner).AssignByJSONPointer(&cur, v)
 		if err != nil {
@@ -476,11 +495,13 @@ func (s *state) setArrayIndex(src reflect.Value, token Token, v reflect.Value) e
 }
 
 func (s *state) setMapIndex(src reflect.Value, token Token, v reflect.Value) error {
+	fmt.Println("should be setting map index?")
+	fmt.Println(src.Type())
 	kv, err := s.mapKey(src, token)
 	if err != nil {
 		return err
 	}
-	v.SetMapIndex(kv, v)
+	src.SetMapIndex(kv, v)
 	return nil
 }
 

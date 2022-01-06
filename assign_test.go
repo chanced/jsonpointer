@@ -18,12 +18,12 @@ func TestAssign(t *testing.T) {
 		err   error
 		run   func(v interface{})
 	}{
-		{"/nested/str", "strval", nil, func(val interface{}) {
-			assert.Equal(val, r.Nested.String)
-		}},
-		{"/nestedptr/str", "x", nil, func(val interface{}) {
-			assert.Equal(val, r.NestedPtr.String)
-		}},
+		// {"/nested/str", "strval", nil, func(val interface{}) {
+		// 	assert.Equal(val, r.Nested.String)
+		// }},
+		// {"/nestedptr/str", "x", nil, func(val interface{}) {
+		// 	assert.Equal(val, r.NestedPtr.String)
+		// }},
 		{"/nested/entrymap/keyval/name", "entry-name", nil, func(v interface{}) {
 			assert.Contains(r.Nested.EntryMap, "keyval")
 			assert.Equal("entry-name", r.Nested.EntryMap["keyval"].Name)
