@@ -1,6 +1,7 @@
 package jsonpointer_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/chanced/jsonpointer"
@@ -26,6 +27,7 @@ func TestResolveField(t *testing.T) {
 			Inline:        Inline{InlineStr: "inline value"},
 			Nested:        &Nested{String: "deeply nested value"},
 			Embedded:      Embedded{Value: "embedded value"},
+			IntSlice:      []int{},
 			Bool:          true,
 			BoolPtr:       bp,
 			AnonStructPtr: &anon,
@@ -49,17 +51,20 @@ func TestResolveField(t *testing.T) {
 		{"/nested/invalid", nil, jsonpointer.ErrNotFound},
 		{"/nested/empty/str", nil, jsonpointer.ErrUnreachable},
 		{"/nested/empty/str", nil, jsonpointer.ErrNotFound},
+		{"/nested/intslice/badkey", nil, jsonpointer.ErrMalformedIndex},
 	}
 
 	for i, test := range tests {
+		fmt.Printf("=== test %d, pointer %s", i, test.ptr)
 		var val interface{}
 		err := jsonpointer.Resolve(r, test.ptr, &val)
 		if test.expectederr != nil {
-			assert.ErrorIs(err, test.expectederr, "test %d, pointer %s", i, test.ptr)
+			assert.ErrorIs(err, test.expectederr)
 		} else {
 			assert.NoError(err)
 		}
-		assert.Equal(test.expectedval, val, "test %d, pointer %s", i, test.ptr)
+		assert.Equal(test.expectedval, val)
+		fmt.Printf("\n\tPASS\n")
 	}
 }
 

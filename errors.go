@@ -58,6 +58,10 @@ var (
 	// jsonpoint.Resolver and return a non-nil implemention of the interface.
 	//
 	ErrNilInterface = errors.New("jsonpointer: can not assign due to nil interface")
+
+	// ErrMalformedIndex indicates a syntax error in the index or a slice or an
+	// array.
+	ErrMalformedIndex = errors.New("jsonpointer: malformed slice/array index")
 )
 
 // Error is a base error type returned from Resolve, Assign, and Delete.
