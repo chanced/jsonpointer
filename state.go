@@ -9,8 +9,6 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
-
-	"github.com/sanity-io/litter"
 )
 
 var (
@@ -332,27 +330,30 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 	var nv reflect.Value
 	nv, err = s.assign(nd, value)
 	s.current = s.current.Prepend(t)
-
 	if err != nil {
 		return dst, err
 	}
-
-	fmt.Println("nd.Type", nd.Type())
-	fmt.Println("nv.Type", nv.Type())
-	fmt.Println("nv.Elem.Type", nv.Elem().Type())
-	fmt.Println("nv.Elem.IsNil", nv.IsNil())
-	fmt.Println("dst.Type", dst.Type())
 	if dst.Type().NumMethod() > 0 && dst.CanInterface() && dst.Type().Implements(typeAssigner) {
 		if assigner, ok := dst.Interface().(Assigner); ok {
-			fmt.Println("dst.Elem().Type()", dst.Elem().Type())
-			fmt.Println("dst.Type()", dst.Type())
-			fmt.Println("dst", litter.Sdump(dst.Interface()))
 			nve := nv.Elem().Interface()
-			fmt.Println("nve:", litter.Sdump(nve))
-			fmt.Println("assigner", assigner)
-			if assigner == nil {
-				fmt.Println("wtf is assigner nil for?")
+			err = assigner.AssignByJSONPointer(&cur, nve)
+			if err != nil {
+				if !errors.Is(err, YieldOperation) {
+					return dst, newError(err, *s, dst.Elem().Type())
+				} else {
+					// the Assigner has yielded operation back to jsonpointer
+					// resetting current incase the Assigner mutated it
+					cur = s.current
+				}
+			} else {
+				return dst, nil
 			}
+			// updating state to reflect the new token if it was set by assigner
+			s.current = cur
+		}
+	} else if dst.Elem().Type().NumMethod() > 0 && dst.Elem().CanInterface() && dst.Type().Elem().Implements(typeAssigner) {
+		if assigner, ok := dst.Elem().Interface().(Assigner); ok {
+			nve := nv.Elem().Interface()
 			err = assigner.AssignByJSONPointer(&cur, nve)
 			if err != nil {
 				if !errors.Is(err, YieldOperation) {
@@ -369,7 +370,6 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 			s.current = cur
 		}
 	}
-
 	nd, err = s.assignValue(nd, nv.Elem())
 	if err != nil {
 		return nd, err
@@ -395,10 +395,7 @@ func (s *state) assignValue(dst reflect.Value, v reflect.Value) (reflect.Value, 
 		return dst, nil
 	}
 	// TODO: replace with an error
-	fmt.Println("dst type:", dst.Type())
-	fmt.Println("val type:", v.Type())
-	fmt.Println("val kind:", v.Kind())
-	panic("can not assign")
+	return v, newValueError(ErrNotAssignable, *s, dst.Elem().Type(), v.Type())
 }
 
 func (s *state) delete(src reflect.Value) error {

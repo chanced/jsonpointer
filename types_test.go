@@ -2,8 +2,10 @@ package jsonpointer_test
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/chanced/jsonpointer"
+	"github.com/sanity-io/litter"
 )
 
 type Root struct {
@@ -44,7 +46,20 @@ type Nested struct {
 }
 
 type InterContainer struct {
-	Interface `json:",inline"`
+	Interface Interface `json:",inline"`
+}
+
+func (ic *InterContainer) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v interface{}) error {
+	fmt.Println("=======================")
+	litter.Config.Dump(v)
+	fmt.Println("=======================")
+	switch typ := v.(type) {
+	case Interface:
+		ic.Interface = typ
+		return nil
+	default:
+		panic("unexpected type: " + reflect.TypeOf(v).String())
+	}
 }
 
 func (ic InterContainer) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op jsonpointer.Operation) (interface{}, error) {
@@ -57,18 +72,21 @@ func (ic InterContainer) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op jso
 	case "private":
 		if in, ok := ic.Interface.(*privateImpl); ok {
 			*ptr = p
+			fmt.Println("---> InterContainer returning ", in)
 			return in, nil
 		}
-		if op == jsonpointer.Assigning {
+		if op.IsAssigning() {
 			*ptr = p
-			return &privateImpl{private: &struct{ value uint }{}}, nil
+			x := &privateImpl{private: &struct{ value uint }{value: 5}}
+			fmt.Println("---> InterContainer returning ", litter.Sdump(x))
+			return x, nil
 		}
 	case "public":
 		if in, ok := ic.Interface.(*PublicImpl); ok {
 			*ptr = p
 			return in, nil
 		}
-		if op == jsonpointer.Assigning {
+		if op.IsAssigning() {
 			*ptr = p
 			return &PublicImpl{}, nil
 		}
