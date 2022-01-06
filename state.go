@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+
+	"github.com/sanity-io/litter"
 )
 
 var (
@@ -114,10 +116,6 @@ func (s *state) resolve(v reflect.Value) (reflect.Value, error) {
 }
 
 func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
-	// fmt.Println("t", t)
-	// fmt.Println("nummethod", v.Type().NumMethod())
-	// fmt.Println("caninterface", v.CanInterface())
-	// fmt.Println("type", v.Type())
 	if v.Type().NumMethod() > 0 && v.CanInterface() {
 		if resolver, ok := v.Interface().(Resolver); ok {
 			rv, err := s.resolveResolver(resolver, v, t)
@@ -159,7 +157,7 @@ func (s *state) resolveResolver(r Resolver, rv reflect.Value, t Token) (reflect.
 	if err != nil {
 		// if the Resolver returns an error, it can either be a YieldOperation
 		// which continues the flow or an actual error.
-		if errors.Is(err, YieldOperation) {
+		if !errors.Is(err, YieldOperation) {
 			return rv, newError(err, *s, reflect.TypeOf(rv))
 		}
 		s.current = prev
@@ -344,22 +342,30 @@ func (s *state) assign(dst reflect.Value, value reflect.Value) (reflect.Value, e
 	fmt.Println("nv.Elem.Type", nv.Elem().Type())
 	fmt.Println("nv.Elem.IsNil", nv.IsNil())
 	fmt.Println("dst.Type", dst.Type())
-
-	if dst.Type().Implements(typeAssigner) && !dst.IsNil() {
-		err = dst.Elem().Interface().(Assigner).AssignByJSONPointer(&cur, nv.Elem().Interface())
-		if err != nil {
-			if !errors.Is(err, YieldOperation) {
-				return dst, newError(err, *s, dst.Elem().Type())
-			} else {
-				// the Assigner has yielded operation back to jsonpointer
-				// resetting current incase the Assigner mutated it
-				cur = s.current
+	if dst.Type().NumMethod() > 0 && dst.CanInterface() {
+		if assigner, ok := dst.Interface().(Assigner); ok {
+			fmt.Println("dst.Elem().Type()", dst.Elem().Type())
+			fmt.Println("assigner", assigner)
+			if assigner == nil {
+				fmt.Println("wtf is assigner nil for?")
 			}
-		} else {
-			return dst, nil
+			nve := nv.Elem().Interface()
+			fmt.Println("nve:", litter.Sdump(nve))
+			assigner.AssignByJSONPointer(&cur, nve)
+			if err != nil {
+				if !errors.Is(err, YieldOperation) {
+					return dst, newError(err, *s, dst.Elem().Type())
+				} else {
+					// the Assigner has yielded operation back to jsonpointer
+					// resetting current incase the Assigner mutated it
+					cur = s.current
+				}
+			} else {
+				return dst, nil
+			}
+			// updating state to reflect the new token if it was set by assigner
+			s.current = cur
 		}
-		// updating state to reflect the new token if it was set by assigner
-		s.current = cur
 	}
 
 	nd, err = s.assignValue(nd, nv.Elem())
