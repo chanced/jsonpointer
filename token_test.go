@@ -1,7 +1,6 @@
 package jsonpointer_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/chanced/jsonpointer"
@@ -46,23 +45,23 @@ func TestTokenString(t *testing.T) {
 	assert.Equal("~/", token.String())
 }
 
-func TestTokenIsIndexable(t *testing.T) {
-	assert := require.New(t)
-	tests := []struct {
-		token    jsonpointer.Token
-		expected bool
-	}{
-		{"1", true},
-		{"-1", false},
-		{"-", true},
-		{"0", true},
-		{"c", false},
-		{"", false},
-	}
+// func TestTokenIsIndexable(t *testing.T) {
+// 	assert := require.New(t)
+// 	tests := []struct {
+// 		token    jsonpointer.Token
+// 		expected bool
+// 	}{
+// 		{"1", true},
+// 		{"-1", false},
+// 		{"-", true},
+// 		{"0", true},
+// 		{"c", false},
+// 		{"", false},
+// 	}
 
-	for i, t := range tests {
-		fmt.Println("=== TestTokenIsIndexable #", i, "token:", t.token)
-		assert.Equal(t.expected, t.token.IsIndexable(), "test %d", i)
-		fmt.Println("--- PASS TestTokenIsIndexable #", i)
-	}
-}
+// 	for i, t := range tests {
+// 		fmt.Println("=== TestTokenIsIndexable #", i, "token:", t.token)
+// 		assert.Equal(t.expected, t.token.IsIndexable(), "test %d", i)
+// 		fmt.Println("--- PASS TestTokenIsIndexable #", i)
+// 	}
+// }

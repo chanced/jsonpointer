@@ -98,7 +98,6 @@ func TestAssignAny(t *testing.T) {
 			assert.Equal(n["str"], "x")
 		}},
 		{"/nested/array/0/entry/value", "entry value", nil, func(v interface{}) {
-			litter.Dump(m)
 			a := m["nested"].(map[string]interface{})["array"].([]interface{})
 			assert.Len(a, 1)
 			mv := a[0].(map[string]interface{})
@@ -109,12 +108,19 @@ func TestAssignAny(t *testing.T) {
 		}},
 
 		{"/nested/intarray/0", int(1), nil, func(v interface{}) {
-		}},
-		{"/nested/anon/value", "val", nil, func(v interface{}) {
+			a := m["nested"].(map[string]interface{})["intarray"].([]interface{})
+			assert.Len(a, 1)
+			assert.Equal(v, a[0])
 		}},
 		{"/nested/strslice/-", "val", nil, func(v interface{}) {
+			a := m["nested"].(map[string]interface{})["strslice"].([]interface{})
+			assert.Len(a, 1)
+			assert.Equal(v, a[0])
 		}},
 		{"/nested/strslice/-", "val2", nil, func(v interface{}) {
+			a := m["nested"].(map[string]interface{})["strslice"].([]interface{})
+			assert.Len(a, 2)
+			assert.Equal(v, a[1])
 		}},
 		{"/nested/custommap/key", "val", nil, func(v interface{}) {
 		}},
@@ -137,4 +143,5 @@ func TestAssignAny(t *testing.T) {
 		}
 		fmt.Printf("--- PASS TestAssign #%d, pointer %s\n", i, test.ptr)
 	}
+	litter.Dump(m)
 }

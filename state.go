@@ -45,7 +45,7 @@ type state struct {
 }
 
 func (s *state) Release() {
-	statePool.Put(&s)
+	statePool.Put(s)
 }
 
 func (s state) Operation() Operation {
@@ -271,82 +271,80 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 		return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", cur)
 	}
 	// new dst
-	var nd reflect.Value
-	nd, err = s.resolveNext(dst, t)
+	var rn reflect.Value
+	rn, err = s.resolveNext(dst, t)
 	if err != nil {
-		return nd, err
+		return rn, err
 	}
 
 	shouldSet := false
-	switch nd.Kind() {
+	switch rn.Kind() {
 	case reflect.Interface:
-		if !nd.IsNil() && nd.Type() == typeAny {
-			nd = nd.Elem()
+		if !rn.IsNil() && rn.Type() == typeAny {
+			rn = rn.Elem()
 		}
 	case reflect.Ptr:
-		if nd.IsNil() {
-			nd.Set(reflect.New(nd.Type().Elem()))
+		if rn.IsNil() {
+			rn.Set(reflect.New(rn.Type().Elem()))
 		}
 	case reflect.Map:
-		if nd.IsNil() {
-			nd.Set(reflect.MakeMap(nd.Type()))
+		if rn.IsNil() {
+			rn.Set(reflect.MakeMap(rn.Type()))
 		}
 	case reflect.Slice:
-		if nd.IsNil() {
-			nd.Set(reflect.MakeSlice(nd.Type(), 0, 1))
+		if rn.IsNil() {
+			rn.Set(reflect.MakeSlice(rn.Type(), 0, 1))
 		}
 	case reflect.Invalid:
 		switch dst.Type().Elem().Kind() {
-		case reflect.Map:
+		case reflect.Map, reflect.Slice:
 			shouldSet = true
-			nd = reflect.Zero(dst.Type().Elem().Elem())
-			if nd.Kind() == reflect.Ptr && nd.IsNil() {
-				nd = reflect.New(nd.Type().Elem())
+			rn = reflect.Zero(dst.Type().Elem().Elem())
+			if rn.Kind() == reflect.Ptr && rn.IsNil() {
+				rn = reflect.New(rn.Type().Elem())
 				// so this works
-			} else if nd.Type() == typeAny && nd.IsNil() {
-				fmt.Printf("\ttoken: %v\n\t\tcurrent: %v\n\t\troot: %v\n", t, s.current, s.current.IsRoot())
-				switch {
-				case s.current.IsRoot():
-					nd = reflect.Zero(val.Type())
-				case t.IsIndexable():
-					nd = reflect.MakeSlice(typeAnySlice, 0, 1)
-				default:
-					nd = reflect.MakeMap(typeAnyMap)
+			} else if rn.Type() == typeAny && rn.IsNil() {
+				nt, ok := s.current.NextToken()
+				if !ok {
+					rn = reflect.Zero(val.Type())
+				} else {
+					if _, err = nt.Index(0); err == nil {
+						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
+					} else {
+						rn = reflect.MakeMap(typeAnyMap)
+					}
 				}
 			}
-		case reflect.Slice:
-			shouldSet = true
-			if err != nil {
-				return reflect.Value{}, newError(err, *s, dst.Type())
-			}
-			nd = reflect.Zero(dst.Type().Elem().Elem())
-			if nd.Kind() == reflect.Ptr && nd.IsNil() {
-				nd = reflect.New(nd.Type().Elem())
-			}
 		case reflect.Interface:
-			if nd.Type() == typeAny {
-				switch {
-				case s.current.IsRoot():
-					nd = reflect.Zero(val.Type())
-				case t.IsIndexable():
-					nd = reflect.MakeSlice(typeAnySlice, 0, 1)
-				default:
-					nd = reflect.MakeMap(typeAnyMap)
+			_, nt, ok := s.current.Next()
+			if !ok {
+				panic("pointer is not ok")
+			}
+			if rn.Type() == typeAny {
+				if s.current.IsRoot() {
+					rn = reflect.Zero(val.Type())
+				} else {
+					if _, err = nt.Index(0); err == nil {
+						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
+					} else {
+						rn = reflect.MakeMap(typeAnyMap)
+					}
 				}
 			}
 		default:
 			return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
 		}
 	}
-	if nd.CanAddr() {
-		nd = nd.Addr()
+
+	if rn.CanAddr() {
+		rn = rn.Addr()
 	} else {
-		pv := reflect.New(nd.Type())
-		pv.Elem().Set(nd)
-		nd = pv
+		pv := reflect.New(rn.Type())
+		pv.Elem().Set(rn)
+		rn = pv
 	}
 	var nv reflect.Value
-	nv, err = s.assign(nd, val)
+	nv, err = s.assign(rn, val)
 
 	s.current = s.current.Prepend(t)
 	if err != nil {
@@ -385,16 +383,16 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 			s.current = cur
 		}
 	}
-	nd, err = s.assignValue(nd, nv.Elem())
+	rn, err = s.assignValue(rn, nv.Elem())
 	if err != nil {
-		return nd, err
+		return rn, err
 	}
 	if shouldSet {
 		switch dst.Elem().Kind() {
 		case reflect.Map:
-			s.setMapIndex(dst.Elem(), t, nd.Elem())
+			s.setMapIndex(dst.Elem(), t, rn.Elem())
 		case reflect.Slice:
-			s.setSliceIndex(dst.Elem(), t, nd.Elem())
+			s.setSliceIndex(dst.Elem(), t, rn.Elem())
 		}
 	}
 	return dst, nil
