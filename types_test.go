@@ -5,7 +5,6 @@ import (
 	"reflect"
 
 	"github.com/chanced/jsonpointer"
-	"github.com/sanity-io/litter"
 )
 
 type Root struct {
@@ -50,9 +49,6 @@ type InterContainer struct {
 }
 
 func (ic *InterContainer) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v interface{}) error {
-	fmt.Println("=======================")
-	litter.Config.Dump(v)
-	fmt.Println("=======================")
 	switch typ := v.(type) {
 	case Interface:
 		ic.Interface = typ
@@ -63,7 +59,6 @@ func (ic *InterContainer) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v in
 }
 
 func (ic InterContainer) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op jsonpointer.Operation) (interface{}, error) {
-	fmt.Println("InterContainer resolving ptr", ptr.String())
 	p, t, ok := ptr.Next()
 	if !ok {
 		return nil, fmt.Errorf("unexpected root pointer: %s", ptr.String())
@@ -72,13 +67,11 @@ func (ic InterContainer) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op jso
 	case "private":
 		if in, ok := ic.Interface.(*privateImpl); ok {
 			*ptr = p
-			fmt.Println("---> InterContainer returning ", in)
 			return in, nil
 		}
 		if op.IsAssigning() {
 			*ptr = p
 			x := &privateImpl{private: &struct{ value uint }{value: 5}}
-			fmt.Println("---> InterContainer returning ", litter.Sdump(x))
 			return x, nil
 		}
 	case "public":
@@ -115,14 +108,6 @@ func (pi *privateImpl) MarshalJSON() ([]byte, error) {
 }
 
 func (pi *privateImpl) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v interface{}) error {
-	fmt.Println("ASSIGNBYJSONPOINTER CALLED FOR *privateImpl", ptr.String())
-	t, ok := ptr.NextToken()
-	if !ok {
-		return nil
-	}
-	if t != "private" {
-		fmt.Println(v)
-	}
 	if v == nil {
 		pi.private = nil
 		return nil
@@ -148,7 +133,6 @@ func (pi *privateImpl) DeleteByJSONPointer(ptr *jsonpointer.JSONPointer) error {
 }
 
 func (pi privateImpl) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op jsonpointer.Operation) (interface{}, error) {
-	fmt.Println("privateImpl resolving ptr", ptr.String())
 	np, t, ok := ptr.Next()
 	if !ok {
 		panic("token not available? pointer: " + ptr.String())
@@ -159,7 +143,6 @@ func (pi privateImpl) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op jsonpo
 			return nil, fmt.Errorf("unexpected root pointer: %s", ptr.String())
 		}
 		*ptr = np
-		fmt.Println("IS PRIVATE")
 	}
 	if t != "value" {
 		panic("unexpected pointer: " + ptr.String())

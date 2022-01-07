@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/chanced/jsonpointer"
+	"github.com/sanity-io/litter"
 	"github.com/stretchr/testify/require"
 )
 
@@ -62,8 +63,72 @@ func TestAssign(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		fmt.Printf("=== RUN TestAssign#%d, pointer %s\n", i+1, test.ptr)
+		fmt.Printf("=== RUN TestAssign #%d, pointer %s\n", i+1, test.ptr)
 		err := jsonpointer.Assign(&r, test.ptr, test.value)
+		if test.err != nil {
+			assert.ErrorIs(err, test.err)
+		} else {
+			assert.NoError(err)
+			test.run(test.value)
+		}
+		fmt.Printf("--- PASS TestAssign #%d, pointer %s\n", i, test.ptr)
+	}
+}
+
+func TestAssignAny(t *testing.T) {
+	assert := require.New(t)
+
+	m := map[string]interface{}{}
+	tests := []struct {
+		ptr   jsonpointer.JSONPointer
+		value interface{}
+		err   error
+		run   func(v interface{})
+	}{
+		{"/nested/str", "strval", nil, func(val interface{}) {
+			assert.Contains(m, "nested")
+			assert.Contains(m["nested"], "str")
+			m := m["nested"].(map[string]interface{})
+			assert.Equal(val, m["str"])
+		}},
+		{"/nestedptr/str", "x", nil, func(val interface{}) {
+			assert.Contains(m, "nestedptr")
+			assert.Contains(m["nestedptr"], "str")
+			n := m["nestedptr"].(map[string]interface{})
+			assert.Equal(n["str"], "x")
+		}},
+		{"/nested/array/0/entry/value", "entry value", nil, func(v interface{}) {
+			litter.Dump(m)
+			a := m["nested"].(map[string]interface{})["array"].([]interface{})
+			assert.Len(a, 1)
+			mv := a[0].(map[string]interface{})
+			assert.Contains(mv, "entry")
+			e := mv["entry"].(map[string]interface{})
+			assert.Contains(e, "value")
+			assert.Equal(v, e["value"])
+		}},
+
+		{"/nested/intarray/0", int(1), nil, func(v interface{}) {
+		}},
+		{"/nested/anon/value", "val", nil, func(v interface{}) {
+		}},
+		{"/nested/strslice/-", "val", nil, func(v interface{}) {
+		}},
+		{"/nested/strslice/-", "val2", nil, func(v interface{}) {
+		}},
+		{"/nested/custommap/key", "val", nil, func(v interface{}) {
+		}},
+		{"/nested/embedded/value", "embed-val", nil, func(v interface{}) {
+		}},
+		{"/nested/yield/value", "yielded value", nil, func(v interface{}) {
+		}},
+		{"/nested/interface/private/value", uint(3), nil, func(v interface{}) {
+		}},
+	}
+
+	for i, test := range tests {
+		fmt.Printf("=== RUN TestAssignAny #%d, pointer %s\n", i, test.ptr)
+		err := jsonpointer.Assign(&m, test.ptr, test.value)
 		if test.err != nil {
 			assert.ErrorIs(err, test.err)
 		} else {

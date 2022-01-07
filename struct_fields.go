@@ -11,7 +11,6 @@ import (
 )
 
 var fieldCache sync.Map // map[reflect.Type]structFields
-
 // A field represents a single field found in a struct.
 type field struct {
 	name      string

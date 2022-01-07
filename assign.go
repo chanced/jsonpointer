@@ -1,6 +1,7 @@
 package jsonpointer
 
 import (
+	"fmt"
 	"reflect"
 )
 
@@ -12,22 +13,12 @@ func Assign(dst interface{}, ptr JSONPointer, value interface{}) error {
 	if err := ptr.Validate(); err != nil {
 		return err
 	}
-
-	//  not sure whether or not to delete this. Leaving it out for now.
-	//
-	// if ptr == TopLevel {
-	// 	return &ptrError{
-	// 		err: ErrEmptyJSONPointer,
-	// 		typ: reflect.TypeOf(src),
-	// 	}
-	// }
-
 	if value == nil {
 		return Delete(dst, ptr)
 	}
 	dv := reflect.ValueOf(dst)
 	s := newState(ptr, Assigning)
-	defer s.Done()
+	defer s.Release()
 	if dv.Kind() != reflect.Ptr || dv.IsNil() {
 		return &ptrError{
 			state: *s,
@@ -36,16 +27,21 @@ func Assign(dst interface{}, ptr JSONPointer, value interface{}) error {
 		}
 	}
 
-	var tmp reflect.Value
-	if dv.Type().Elem().Kind() == reflect.Ptr {
-		tmp = dv
-		if dv.Elem().IsNil() {
-			dv = reflect.New(dv.Type().Elem().Elem())
-		} else {
-			dv = dv.Elem()
+	cpy := dv
+	dv = dv.Elem()
+	switch dv.Type().Kind() {
+	case reflect.Ptr:
+		if dv.IsNil() {
+			dv = reflect.New(dv.Type().Elem())
+		}
+	case reflect.Slice:
+		if dv.Type().AssignableTo(typeByteSlice) {
+			fmt.Println("is byte slice")
 		}
 	}
-	res, err := s.assign(dv, reflect.ValueOf(value))
-	tmp.Elem().Set(res)
+	dp := reflect.New(dv.Type())
+	dp.Elem().Set(dv)
+	res, err := s.assign(dp, reflect.ValueOf(value))
+	cpy.Elem().Set(res.Elem())
 	return err
 }

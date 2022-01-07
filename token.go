@@ -31,6 +31,16 @@ func (t Token) Uint64() (uint64, error) {
 	return strconv.ParseUint(t.String(), 10, 64)
 }
 
+func (t Token) IsIndexable() bool {
+	if t == "-" {
+		return true
+	}
+	if i, err := t.Int(); err == nil {
+		return i >= 0
+	}
+	return false
+}
+
 func (t Token) Int() (int, error) {
 	return strconv.Atoi(t.String())
 }

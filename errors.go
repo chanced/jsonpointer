@@ -246,7 +246,7 @@ type valueError struct {
 }
 
 func (e *valueError) Error() string {
-	return e.ptrError.Error() + " " + e.valuetype.String() + " for " + e.typ.String()
+	return fmt.Sprintf("%v (%v) for reference \"%v\"; expected %v", e.ptrError.err, e.valuetype, e.ptr, e.typ)
 }
 
 func (e *valueError) ValueType() reflect.Type {
@@ -293,7 +293,7 @@ func (e *indexError) Index() int {
 
 func (e *indexError) Error() string {
 	if errors.Is(e.err, ErrOutOfRange) {
-		return fmt.Sprintf("%v; expected index to be less than next (%d) but is (%d)", ErrOutOfRange, e.maxIndex, e.index)
+		return fmt.Sprintf("%v; expected index to be equal to or less than next (%d) but is (%d)", ErrOutOfRange, e.maxIndex, e.index)
 	}
 	return fmt.Sprintf("%v for index %d of %d", e.err.Error(), e.index, e.maxIndex)
 }

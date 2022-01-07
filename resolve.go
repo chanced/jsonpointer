@@ -12,7 +12,7 @@ func Resolve(src interface{}, ptr JSONPointer, dst interface{}) error {
 	}
 	dv := reflect.ValueOf(dst)
 	s := newState(ptr, Resolving)
-	defer s.Done()
+	defer s.Release()
 	if dv.Kind() != reflect.Ptr || dv.IsNil() {
 		return &ptrError{
 			state: *s,

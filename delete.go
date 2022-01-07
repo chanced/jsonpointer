@@ -5,5 +5,10 @@ type Deleter interface {
 }
 
 func Delete(src interface{}, ptr JSONPointer) error {
-	panic("not impl")
+	if err := ptr.Validate(); err != nil {
+		return err
+	}
+	s := newState(ptr, Deleting)
+	defer s.Release()
+	panic("not done with Delete")
 }
