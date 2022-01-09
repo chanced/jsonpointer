@@ -33,9 +33,13 @@ func TestAssign(t *testing.T) {
 		{"/nested/strarray/1", "strval", nil, func(v interface{}) {
 			assert.Equal(v, r.Nested.StrArray[1])
 		}},
-		{"/nested/intarray/1", int(1), nil, func(v interface{}) {
+		{"/nested/intarray/1", 1, nil, func(v interface{}) {
 			assert.Equal(v, r.Nested.IntArray[1])
 		}},
+		{"/nested/intarray/2", 3, nil, func(v interface{}) {
+			assert.Equal(v, r.Nested.IntArray[2])
+		}},
+		{"/nested/intarray/3", 3, jsonpointer.ErrOutOfRange, nil},
 		{"/nested/anon/value", "val", nil, func(v interface{}) {
 			assert.Equal(v, r.Nested.AnonStruct.Value)
 		}},
@@ -117,18 +121,10 @@ func TestAssignAny(t *testing.T) {
 			assert.Len(a, 1)
 			assert.Equal(v, a[0])
 		}},
-		{"/nested/strslice/-", "val2", nil, func(v interface{}) {
+		{"/nested/strslice/1", "val2", nil, func(v interface{}) {
 			a := m["nested"].(map[string]interface{})["strslice"].([]interface{})
 			assert.Len(a, 2)
 			assert.Equal(v, a[1])
-		}},
-		{"/nested/custommap/key", "val", nil, func(v interface{}) {
-		}},
-		{"/nested/embedded/value", "embed-val", nil, func(v interface{}) {
-		}},
-		{"/nested/yield/value", "yielded value", nil, func(v interface{}) {
-		}},
-		{"/nested/interface/private/value", uint(3), nil, func(v interface{}) {
 		}},
 	}
 

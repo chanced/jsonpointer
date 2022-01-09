@@ -277,7 +277,7 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 		return rn, err
 	}
 
-	shouldSet := false
+	// shouldSet := false
 	switch rn.Kind() {
 	case reflect.Interface:
 		if !rn.IsNil() && rn.Type() == typeAny {
@@ -298,7 +298,7 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 	case reflect.Invalid:
 		switch dst.Type().Elem().Kind() {
 		case reflect.Map, reflect.Slice:
-			shouldSet = true
+			// shouldSet = true
 			rn = reflect.Zero(dst.Type().Elem().Elem())
 			if rn.Kind() == reflect.Ptr && rn.IsNil() {
 				rn = reflect.New(rn.Type().Elem())
@@ -387,13 +387,13 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 	if err != nil {
 		return rn, err
 	}
-	if shouldSet {
-		switch dst.Elem().Kind() {
-		case reflect.Map:
-			s.setMapIndex(dst.Elem(), t, rn.Elem())
-		case reflect.Slice:
-			s.setSliceIndex(dst.Elem(), t, rn.Elem())
-		}
+	// if shouldSet {
+	switch dst.Elem().Kind() {
+	case reflect.Map:
+		s.setMapIndex(dst.Elem(), t, rn.Elem())
+	case reflect.Slice:
+
+		s.setSliceIndex(dst, t, rn.Elem())
 	}
 	return dst, nil
 }
@@ -517,15 +517,18 @@ func (s *state) mapKey(src reflect.Value, t Token) (reflect.Value, error) {
 }
 
 func (s *state) setSliceIndex(l reflect.Value, token Token, v reflect.Value) error {
-	i, err := s.sliceIndex(l, token)
+	i, err := s.sliceIndex(l.Elem(), token)
 	if err != nil {
 		return err
 	}
-	if i >= l.Len() {
-		l.Set(reflect.Append(l, v))
+	if i >= l.Elem().Len() {
+		l.Elem().Set(reflect.Append(l.Elem(), v))
 		return nil
+	} else {
+		nl := l.Elem()
+		nl.Index(i).Set(v)
+		l.Set(nl)
 	}
-	l.Index(i).Set(v)
 	return nil
 }
 
