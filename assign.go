@@ -1,7 +1,6 @@
 package jsonpointer
 
 import (
-	"fmt"
 	"reflect"
 )
 
@@ -26,22 +25,17 @@ func Assign(dst interface{}, ptr JSONPointer, value interface{}) error {
 			typ:   dv.Type(),
 		}
 	}
-
 	cpy := dv
 	dv = dv.Elem()
-	switch dv.Type().Kind() {
-	case reflect.Ptr:
-		if dv.IsNil() {
-			dv = reflect.New(dv.Type().Elem())
-		}
-	case reflect.Slice:
-		if dv.Type().AssignableTo(typeByteSlice) {
-			fmt.Println("is byte slice")
-		}
+	if dv.Kind() == reflect.Ptr && dv.IsNil() {
+		dv = reflect.New(dv.Type().Elem())
 	}
 	dp := reflect.New(dv.Type())
 	dp.Elem().Set(dv)
 	res, err := s.assign(dp, reflect.ValueOf(value))
+	if err != nil {
+		return err
+	}
 	cpy.Elem().Set(res.Elem())
-	return err
+	return nil
 }

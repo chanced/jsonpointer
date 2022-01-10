@@ -1,6 +1,7 @@
 package jsonpointer
 
 import (
+	"bytes"
 	"encoding"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+
+	"github.com/sanity-io/litter"
 )
 
 var (
@@ -52,6 +55,146 @@ func (s state) Operation() Operation {
 	return s.op
 }
 
+func (s *state) resolve(v reflect.Value) (reflect.Value, error) {
+	var t Token
+	var err error
+	var ok bool
+	for {
+		cur := s.current
+		if cur.IsRoot() {
+			return v, nil
+		}
+		typ := v.Type()
+		if s.current, t, ok = cur.Next(); !ok {
+			return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", s.current)
+		}
+		if err != nil {
+			return v, newError(err, *s, typ)
+		}
+
+		v, err = s.resolveNext(v, t)
+		if err == nil {
+			switch v.Kind() {
+			case reflect.Interface, reflect.Ptr, reflect.Map, reflect.Slice:
+				if v.IsNil() && !cur.IsRoot() {
+					return v, newError(ErrUnreachable, *s, typ)
+				}
+			}
+		}
+
+		if err == nil && v.Kind() == reflect.Invalid {
+			err = newError(ErrNotFound, *s, typ)
+		}
+		if err != nil {
+			s.current = cur.Prepend(t)
+			updateErrorState(err, *s)
+			return v, err
+		}
+	}
+}
+
+func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, error) {
+	var t Token
+	var err error
+	var ok bool
+	cur := s.current
+	if cur.IsRoot() {
+		_, err := s.assignValue(dst, val)
+		return dst, err
+	}
+
+	s.current, t, ok = cur.Next()
+
+	if !ok {
+		return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", cur)
+	}
+	var ds string
+	var de interface{}
+	var v interface{}
+	fmt.Println("============= TKN =============")
+	fmt.Println(t)
+	if isByteSlice(dst.Elem()) {
+		fmt.Println("============= DST =============")
+		buf := &bytes.Buffer{}
+		json.Compact(buf, dst.Elem().Bytes())
+		ds = buf.String()
+		fmt.Println(ds)
+	} else {
+		fmt.Println("============= DST =============")
+		de = dst.Elem().Interface()
+		litter.Dump(de)
+	}
+	fmt.Println("============= VAL =============")
+	v = val.Interface()
+	litter.Dump(v)
+	// new dst
+	var rn reflect.Value
+	rn, err = s.resolveNext(dst, t)
+	if err != nil {
+		return rn, err
+	}
+	fmt.Println("============= REN =============")
+	litter.Dump(rn.Elem().Interface())
+	fmt.Printf("===============================\n")
+
+	// shouldSet := false
+	switch rn.Kind() {
+	case reflect.Interface:
+		if !rn.IsNil() && rn.Type() == typeAny {
+			rn = rn.Elem()
+		}
+	case reflect.Ptr:
+		if rn.IsNil() {
+			rn.Set(reflect.New(rn.Type().Elem()))
+		}
+	case reflect.Map:
+		if rn.IsNil() {
+			rn.Set(reflect.MakeMap(rn.Type()))
+		}
+	case reflect.Slice:
+		if rn.IsNil() {
+			rn.Set(reflect.MakeSlice(rn.Type(), 0, 1))
+		}
+	case reflect.Invalid:
+		switch dst.Type().Elem().Kind() {
+		case reflect.Map, reflect.Slice:
+			// shouldSet = true
+			rn = reflect.Zero(dst.Type().Elem().Elem())
+			if rn.Kind() == reflect.Ptr && rn.IsNil() {
+				rn = reflect.New(rn.Type().Elem())
+				// so this works
+			} else if rn.Type() == typeAny && rn.IsNil() {
+				nt, ok := s.current.NextToken()
+				if !ok {
+					rn = reflect.Zero(val.Type())
+				} else {
+					if _, err = nt.Index(0); err == nil {
+						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
+					} else {
+						rn = reflect.MakeMap(typeAnyMap)
+					}
+				}
+			}
+		case reflect.Interface:
+			_, nt, ok := s.current.Next()
+			if !ok {
+				panic("pointer is not ok")
+			}
+			if rn.Type() == typeAny {
+				if s.current.IsRoot() {
+					rn = reflect.Zero(val.Type())
+				} else {
+					if _, err = nt.Index(0); err == nil {
+						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
+					} else {
+						rn = reflect.MakeMap(typeAnyMap)
+					}
+				}
+			}
+		default:
+			return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
+		}
+	}
 func (s *state) setValue(dst reflect.Value, v reflect.Value) error {
 	switch dst.Kind() {
 	case reflect.Interface:
@@ -79,45 +222,29 @@ func (s *state) setValue(dst reflect.Value, v reflect.Value) error {
 	}
 }
 
-func (s *state) resolve(v reflect.Value) (reflect.Value, error) {
-	var t Token
-	var err error
-	var ok bool
-	for {
-		cur := s.current
-		if cur.IsRoot() {
-			return v, nil
-		}
-		typ := v.Type()
-		if s.current, t, ok = cur.Next(); !ok {
-			return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", s.current)
-		}
-		if err != nil {
-			return v, newError(err, *s, typ)
-		}
-		v, err = s.resolveNext(v, t)
-		if err == nil {
-			switch v.Kind() {
-			case reflect.Interface, reflect.Ptr, reflect.Map, reflect.Slice:
-				if v.IsNil() && !cur.IsRoot() {
-					return v, newError(ErrUnreachable, *s, typ)
-				}
-			}
-		}
-
-		if err == nil && v.Kind() == reflect.Invalid {
-			err = newError(ErrNotFound, *s, typ)
-		}
-		if err != nil {
-			s.current = cur.Prepend(t)
-			updateErrorState(err, *s)
-			return v, err
-		}
+func (s state) marshal(v reflect.Value) (reflect.Value, error) {
+	b, err := json.Marshal(v.Interface())
+	if err != nil {
+		return reflect.Value{}, newError(err, s, v.Type())
 	}
+	bv := reflect.New(typeByteSlice)
+	bv.Elem().SetBytes(b)
+	return bv, nil
+}
+
+func (s state) unmarshal(v reflect.Value) (reflect.Value, error) {
+	var i interface{}
+	err := json.Unmarshal(v.Bytes(), &i)
+	if err != nil {
+		return v, newError(err, s, reflect.TypeOf(v))
+	}
+	return reflect.ValueOf(i), nil
 }
 
 func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
-	if v.Type().NumMethod() > 0 && v.CanInterface() {
+	var err error
+	switch {
+	case v.Type().NumMethod() > 0 && v.CanInterface():
 		if resolver, ok := v.Interface().(Resolver); ok {
 			rv, err := s.resolveResolver(resolver, v, t)
 			if err != nil {
@@ -128,7 +255,18 @@ func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
 				return rv, nil
 			}
 		}
+	case isByteSlice(v):
+		v, err = s.unmarshal(v)
+		if err != nil {
+			return v, err
+		}
+	case v.Kind() == reflect.Ptr && isByteSlice(v.Elem()):
+		v, err = s.unmarshal(v.Elem())
+		if err != nil {
+			return v, err
+		}
 	}
+
 	switch v.Kind() {
 	case reflect.Interface, reflect.Ptr:
 		if v.IsNil() {
@@ -253,88 +391,6 @@ func (s state) CurrentJSONPointer() JSONPointer {
 	return s.current
 }
 
-func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, error) {
-	var t Token
-	var err error
-	var ok bool
-
-	cur := s.current
-
-	if cur.IsRoot() {
-		_, err := s.assignValue(dst, val)
-		return dst, err
-	}
-
-	s.current, t, ok = cur.Next()
-
-	if !ok {
-		return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", cur)
-	}
-	// new dst
-	var rn reflect.Value
-	rn, err = s.resolveNext(dst, t)
-	if err != nil {
-		return rn, err
-	}
-
-	// shouldSet := false
-	switch rn.Kind() {
-	case reflect.Interface:
-		if !rn.IsNil() && rn.Type() == typeAny {
-			rn = rn.Elem()
-		}
-	case reflect.Ptr:
-		if rn.IsNil() {
-			rn.Set(reflect.New(rn.Type().Elem()))
-		}
-	case reflect.Map:
-		if rn.IsNil() {
-			rn.Set(reflect.MakeMap(rn.Type()))
-		}
-	case reflect.Slice:
-		if rn.IsNil() {
-			rn.Set(reflect.MakeSlice(rn.Type(), 0, 1))
-		}
-	case reflect.Invalid:
-		switch dst.Type().Elem().Kind() {
-		case reflect.Map, reflect.Slice:
-			// shouldSet = true
-			rn = reflect.Zero(dst.Type().Elem().Elem())
-			if rn.Kind() == reflect.Ptr && rn.IsNil() {
-				rn = reflect.New(rn.Type().Elem())
-				// so this works
-			} else if rn.Type() == typeAny && rn.IsNil() {
-				nt, ok := s.current.NextToken()
-				if !ok {
-					rn = reflect.Zero(val.Type())
-				} else {
-					if _, err = nt.Index(0); err == nil {
-						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
-					} else {
-						rn = reflect.MakeMap(typeAnyMap)
-					}
-				}
-			}
-		case reflect.Interface:
-			_, nt, ok := s.current.Next()
-			if !ok {
-				panic("pointer is not ok")
-			}
-			if rn.Type() == typeAny {
-				if s.current.IsRoot() {
-					rn = reflect.Zero(val.Type())
-				} else {
-					if _, err = nt.Index(0); err == nil {
-						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
-					} else {
-						rn = reflect.MakeMap(typeAnyMap)
-					}
-				}
-			}
-		default:
-			return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
-		}
-	}
 
 	if rn.CanAddr() {
 		rn = rn.Addr()
@@ -346,10 +402,17 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 	var nv reflect.Value
 	nv, err = s.assign(rn, val)
 
-	s.current = s.current.Prepend(t)
+	var nve interface{}
+
+	fmt.Println("============= NEW =============")
+	nve = nv.Elem().Interface()
+	litter.Dump(nve)
+	fmt.Printf("===============================\n")
 	if err != nil {
 		return dst, err
 	}
+
+	s.current = s.current.Prepend(t)
 	if dst.Type().NumMethod() > 0 && dst.CanInterface() && dst.Type().Implements(typeAssigner) {
 		if assigner, ok := dst.Interface().(Assigner); ok {
 			err = assigner.AssignByJSONPointer(&cur, nv.Elem().Interface())
@@ -387,25 +450,39 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 	if err != nil {
 		return rn, err
 	}
-	// if shouldSet {
+
 	switch dst.Elem().Kind() {
 	case reflect.Map:
-		s.setMapIndex(dst.Elem(), t, rn.Elem())
+		err = s.setMapIndex(dst.Elem(), t, rn.Elem())
 	case reflect.Slice:
-
-		s.setSliceIndex(dst, t, rn.Elem())
+		err = s.setSliceIndex(dst, t, rn.Elem())
+	}
+	if err != nil {
+		return reflect.Value{}, newError(err, *s, dst.Elem().Type())
 	}
 	return dst, nil
 }
 
 func (s *state) assignValue(dst reflect.Value, val reflect.Value) (reflect.Value, error) {
 	if !dst.Elem().CanSet() {
-		return dst, newError(ErrNotAssignable, *s, dst.Type())
+		return dst, newValueError(ErrNotAssignable, *s, dst.Type(), val.Type())
 	}
-
-	if val.Type().AssignableTo(dst.Elem().Type()) {
+	switch {
+	case val.Type().AssignableTo(dst.Elem().Type()):
 		dst.Elem().Set(val)
 		return dst, nil
+	case isByteSlice(val.Elem()):
+		err := json.Unmarshal(val.Elem().Bytes(), dst.Interface())
+		if err != nil {
+			return dst, newValueError(ErrNotAssignable, *s, dst.Type(), val.Type())
+		}
+		return dst, nil
+	case isByteSlice(dst.Elem()):
+		b, err := json.Marshal(val.Interface())
+		if err != nil {
+			return dst, newValueError(ErrNotAssignable, *s, dst.Type(), val.Type())
+		}
+		dst.Elem().SetBytes(b)
 	}
 	return val, newValueError(ErrNotAssignable, *s, dst.Elem().Type(), val.Type())
 }
@@ -548,4 +625,11 @@ func (s *state) setMapIndex(m reflect.Value, token Token, v reflect.Value) error
 	}
 	m.SetMapIndex(kv, v)
 	return nil
+}
+
+func isByteSlice(v reflect.Value) bool {
+	if v.Kind() == reflect.Interface && v.Elem().Type().AssignableTo(typeByteSlice) {
+		return true
+	}
+	return v.Type().AssignableTo(typeByteSlice)
 }

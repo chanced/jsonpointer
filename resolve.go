@@ -1,6 +1,9 @@
 package jsonpointer
 
-import "reflect"
+import (
+	"encoding/json"
+	"reflect"
+)
 
 type Resolver interface {
 	ResolveJSONPointer(ptr *JSONPointer, op Operation) (interface{}, error)
@@ -23,6 +26,13 @@ func Resolve(src interface{}, ptr JSONPointer, dst interface{}) error {
 	v, err := s.resolve(reflect.ValueOf(src))
 	if err != nil {
 		return err
+	}
+	if isByteSlice(dv.Elem()) {
+		b, err := json.Marshal(v.Interface())
+		if err != nil {
+			return newError(err, *s, dv.Type())
+		}
+		v = reflect.ValueOf(b)
 	}
 	return s.setValue(dv, v)
 }

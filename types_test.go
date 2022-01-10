@@ -1,6 +1,7 @@
 package jsonpointer_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -19,7 +20,7 @@ type Nested struct {
 	InterContainer InterContainer         `json:"interface"`
 	Nested         *Nested                `json:"nested,omitempty"`
 	Empty          *Nested                `json:"empty,omitempty"`
-	String         string                 `json:"str,omitempty"`
+	Str            string                 `json:"str,omitempty"`
 	Int            int                    `json:"int,omitempty"`
 	IntPtr         *int                   `json:"intptr,omitempty"`
 	Float          float64                `json:"float,omitempty"`
@@ -39,6 +40,7 @@ type Nested struct {
 	StrArray       [3]string              `json:"strarray,omitempty"`
 	IntArray       [3]int                 `json:"intarray,omitempty"`
 	Yield          Yield                  `json:"yield"`
+	Raw            json.RawMessage        `json:"raw"`
 	AnonStructPtr  *struct {
 		Value string
 	} `json:"anonptr"`

@@ -60,7 +60,7 @@ var (
 	ErrNilInterface = errors.New("jsonpointer: can not assign due to nil interface")
 
 	// ErrMalformedIndex indicates a syntax error in the index or a slice or an array.
-	ErrMalformedIndex = errors.New("jsonpointer: malformed slice/array index")
+	ErrMalformedIndex = errors.New("jsonpointer: malformed slice or array index")
 )
 
 // Error is a base error type returned from Resolve, Assign, and Delete.
@@ -301,7 +301,7 @@ func (e *indexError) Error() string {
 // AsIndexError is a convenience function which calls calls errors.As, returning
 // err as an IndexError and true or nil and false if err can not be assigned to
 // an IndexError
-func (e *indexError) AsIndexError(err error) (IndexError, bool) {
+func AsIndexError(err error) (IndexError, bool) {
 	var ie IndexError
 	return ie, errors.As(err, &ie)
 }

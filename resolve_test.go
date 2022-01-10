@@ -2,6 +2,7 @@ package jsonpointer_test
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/chanced/jsonpointer"
@@ -21,11 +22,11 @@ func TestResolveField(t *testing.T) {
 	}
 	r := Root{
 		Nested: Nested{
-			String:        "strval",
+			Str:           "strval",
 			Float:         34.21,
 			FloatPtr:      fp,
 			Inline:        Inline{InlineStr: "inline value"},
-			Nested:        &Nested{String: "deeply nested value"},
+			Nested:        &Nested{Str: "deeply nested value"},
 			Embedded:      Embedded{Value: "embedded value"},
 			IntSlice:      []int{},
 			Bool:          true,
@@ -96,6 +97,7 @@ func TestResolveMapIndex(t *testing.T) {
 	}
 
 	for i, test := range tests {
+		fmt.Printf("=== RUN TestResolveMapIndex #%d, pointer %s\n", i, test.ptr)
 		var val interface{}
 		err := jsonpointer.Resolve(r, test.ptr, &val)
 		if test.expectederr != nil {
@@ -104,6 +106,7 @@ func TestResolveMapIndex(t *testing.T) {
 			assert.NoError(err, "test %d", i)
 		}
 		assert.Equal(test.expectedval, val, "test %d", i)
+		fmt.Printf("--- PASS\n")
 	}
 }
 
@@ -152,11 +155,14 @@ func TestResolveArray(t *testing.T) {
 	}
 
 	for i, test := range tests {
+		fmt.Printf("=== RUN TestResolveArray #%d, pointer %s\n", i, test.ptr)
+
 		var val interface{}
 		err := jsonpointer.Resolve(r, test.ptr, &val)
 		assert.ErrorIs(err, test.expectederr, "test %d", i)
 
 		assert.Equal(test.expectedval, val, "test %d", i)
+		fmt.Println("--- PASS")
 	}
 }
 
@@ -204,25 +210,40 @@ func TestResolveSlice(t *testing.T) {
 	}
 
 	for i, test := range tests {
+		fmt.Printf("=== RUN TestResolveArray #%d, pointer %s\n", i, test.ptr)
 		var val interface{}
 		err := jsonpointer.Resolve(r, test.ptr, &val)
 		assert.ErrorIs(err, test.expectederr, "test %d", i)
 		assert.Equal(test.expectedval, val, "test %d", i)
+		fmt.Println("--- PASS")
 	}
 }
 
-func TestResolveJSONIntoValue(t *testing.T) {
-	j := `{
-		"nested": {
-		  
-		  "bool": false,
-		  "entrymap": {
-			"foo": {
-			  "name": "bar",
-			  "value": 34.34
-			}
-		  }
-	  }`
-	data := []byte(j)
-	_ = data
+func TestResolveJSON(t *testing.T) {
+	assert := require.New(t)
+
+	tests := []struct {
+		ptr  jsonpointer.JSONPointer
+		json string
+		val  interface{}
+		err  error
+	}{
+		{"/nested/str", `{"nested":{"str":"foo"}}`, "foo", nil},
+		{"/nested", `{"nested":{"str":"foo"}}`, []byte(`{"str":"foo"}`), nil},
+	}
+
+	for i, test := range tests {
+		fmt.Printf("=== RUN TestResolveJSON #%d, pointer %s\n", i, test.ptr)
+		vt := reflect.TypeOf(test.val)
+		rv := reflect.New(vt).Elem()
+		v := rv.Interface()
+		err := jsonpointer.Resolve([]byte(test.json), test.ptr, &v)
+		if test.err != nil {
+			assert.Error(err)
+		} else {
+			assert.NoError(err)
+			assert.Equal(test.val, v)
+		}
+		fmt.Println("--- PASS")
+	}
 }
