@@ -1,7 +1,6 @@
 package jsonpointer
 
 import (
-	"bytes"
 	"encoding"
 	"encoding/json"
 	"errors"
@@ -10,8 +9,6 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
-
-	"github.com/sanity-io/litter"
 )
 
 var (
@@ -108,36 +105,43 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 	if !ok {
 		return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", cur)
 	}
-	var ds string
-	var de interface{}
-	var v interface{}
-	fmt.Println("============= TKN =============")
-	fmt.Println(t)
+	var cpy reflect.Value
+
 	if isByteSlice(dst.Elem()) {
-		fmt.Println("============= DST =============")
-		buf := &bytes.Buffer{}
-		json.Compact(buf, dst.Elem().Bytes())
-		ds = buf.String()
-		fmt.Println(ds)
-	} else {
-		fmt.Println("============= DST =============")
-		de = dst.Elem().Interface()
-		litter.Dump(de)
+		cpy = dst
+		if dst.Elem().Len() > 0 {
+			dst, err = s.unmarshal(dst.Elem())
+			if err != nil {
+				return reflect.Value{}, err
+			}
+		} else {
+			_, nt, ok := s.current.Next()
+			if !ok {
+				return reflect.Value{}, newError(ErrMalformedToken, *s, dst.Type())
+			}
+			if s.current.IsRoot() {
+				dst = reflect.Zero(val.Type())
+			} else {
+				if _, err = nt.Index(0); err == nil {
+					dst = reflect.MakeSlice(typeAnySlice, 0, 1)
+				} else {
+					dst = reflect.MakeMap(typeAnyMap)
+				}
+			}
+			dp := reflect.New(dst.Type())
+			dp.Elem().Set(dst)
+			dst = dp
+		}
 	}
-	fmt.Println("============= VAL =============")
-	v = val.Interface()
-	litter.Dump(v)
+
 	// new dst
 	var rn reflect.Value
+
 	rn, err = s.resolveNext(dst, t)
 	if err != nil {
 		return rn, err
 	}
-	fmt.Println("============= REN =============")
-	litter.Dump(rn.Elem().Interface())
-	fmt.Printf("===============================\n")
 
-	// shouldSet := false
 	switch rn.Kind() {
 	case reflect.Interface:
 		if !rn.IsNil() && rn.Type() == typeAny {
@@ -158,11 +162,9 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 	case reflect.Invalid:
 		switch dst.Type().Elem().Kind() {
 		case reflect.Map, reflect.Slice:
-			// shouldSet = true
 			rn = reflect.Zero(dst.Type().Elem().Elem())
 			if rn.Kind() == reflect.Ptr && rn.IsNil() {
 				rn = reflect.New(rn.Type().Elem())
-				// so this works
 			} else if rn.Type() == typeAny && rn.IsNil() {
 				nt, ok := s.current.NextToken()
 				if !ok {
@@ -178,7 +180,7 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 		case reflect.Interface:
 			_, nt, ok := s.current.Next()
 			if !ok {
-				panic("pointer is not ok")
+				return reflect.Value{}, newError(ErrMalformedToken, *s, dst.Type())
 			}
 			if rn.Type() == typeAny {
 				if s.current.IsRoot() {
@@ -195,6 +197,222 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 			return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
 		}
 	}
+
+	if rn.CanAddr() {
+		rn = rn.Addr()
+	} else {
+		pv := reflect.New(rn.Type())
+		pv.Elem().Set(rn)
+		rn = pv
+	}
+	var nv reflect.Value
+	nv, err = s.assign(rn, val)
+
+	if err != nil {
+		return dst, err
+	}
+
+	s.current = s.current.Prepend(t)
+	if cpy.IsValid() {
+		if assigner, ok := asAssigner(cpy); ok {
+			err = assigner.AssignByJSONPointer(&cur, nv.Elem().Interface())
+			if err != nil {
+				if !errors.Is(err, YieldOperation) {
+					return dst, newError(err, *s, dst.Elem().Type())
+				} else {
+					cur = s.current
+				}
+			} else {
+				return dst, nil
+			}
+			// updating state to reflect the new token if it was set by assigner
+			s.current = cur
+		}
+	}
+	if assigner, ok := asAssigner(dst); ok {
+		err = assigner.AssignByJSONPointer(&cur, nv.Elem().Interface())
+		if err != nil {
+			if !errors.Is(err, YieldOperation) {
+				return dst, newError(err, *s, dst.Elem().Type())
+			} else {
+				cur = s.current
+			}
+		} else {
+			return dst, nil
+		}
+		// updating state to reflect the new token if it was set by assigner
+		s.current = cur
+	}
+	rn, err = s.assignValue(rn, nv.Elem())
+	if err != nil {
+		return rn, err
+	}
+
+	switch dst.Elem().Kind() {
+	case reflect.Map:
+		err = s.setMapIndex(dst.Elem(), t, rn.Elem())
+	case reflect.Slice:
+		err = s.setSliceIndex(dst, t, rn.Elem())
+	}
+	if err != nil {
+		return reflect.Value{}, newError(err, *s, dst.Elem().Type())
+	}
+	if cpy.IsValid() {
+		rn, err = s.marshal(dst)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		cpy.Elem().SetBytes(rn.Elem().Bytes())
+		return cpy, nil
+	}
+	return dst, nil
+}
+
+func (s *state) delete(dst reflect.Value) (reflect.Value, error) {
+	var t Token
+	var err error
+	var ok bool
+	cur := s.current
+	if cur.IsRoot() {
+		err := s.deleteValue(dst)
+		return dst, err
+	}
+	s.current, t, ok = cur.Next()
+	if !ok {
+		return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", cur)
+	}
+	var cpy reflect.Value
+
+	if isByteSlice(dst.Elem()) {
+		cpy = dst
+		if dst.Elem().Len() > 0 {
+			dst, err = s.unmarshal(dst.Elem())
+			if err != nil {
+				return reflect.Value{}, err
+			}
+		} else {
+			_, nt, ok := s.current.Next()
+			if !ok {
+				return reflect.Value{}, newError(ErrMalformedToken, *s, dst.Type())
+			}
+			if s.current.IsRoot() {
+				err := s.deleteValue(dst)
+				return dst, err
+			} else {
+				if _, err = nt.Index(0); err == nil {
+					dst = reflect.MakeSlice(typeAnySlice, 0, 1)
+				} else {
+					dst = reflect.MakeMap(typeAnyMap)
+				}
+			}
+			dp := reflect.New(dst.Type())
+			dp.Elem().Set(dst)
+			dst = dp
+		}
+	}
+
+	// new dst
+	var rn reflect.Value
+
+	rn, err = s.resolveNext(dst, t)
+	if err != nil {
+		return rn, err
+	}
+
+	switch rn.Kind() {
+	case reflect.Interface:
+		if !rn.IsNil() && rn.Type() == typeAny {
+			rn = rn.Elem()
+		}
+	case reflect.Ptr:
+		if rn.IsNil() {
+			rn.Set(reflect.New(rn.Type().Elem()))
+		}
+	case reflect.Map:
+		if rn.IsNil() {
+			rn.Set(reflect.MakeMap(rn.Type()))
+		}
+	case reflect.Slice:
+		if rn.IsNil() {
+			rn.Set(reflect.MakeSlice(rn.Type(), 0, 1))
+		}
+	case reflect.Invalid:
+		return dst, nil
+		default:
+			return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
+		}
+	}
+
+	if rn.CanAddr() {
+		rn = rn.Addr()
+	} else {
+		pv := reflect.New(rn.Type())
+		pv.Elem().Set(rn)
+		rn = pv
+	}
+	var nv reflect.Value
+	nv, err = s.assign(rn, val)
+
+	if err != nil {
+		return dst, err
+	}
+
+	s.current = s.current.Prepend(t)
+	if cpy.IsValid() {
+		if assigner, ok := asAssigner(cpy); ok {
+			err = assigner.AssignByJSONPointer(&cur, nv.Elem().Interface())
+			if err != nil {
+				if !errors.Is(err, YieldOperation) {
+					return dst, newError(err, *s, dst.Elem().Type())
+				} else {
+					cur = s.current
+				}
+			} else {
+				return dst, nil
+			}
+			// updating state to reflect the new token if it was set by assigner
+			s.current = cur
+		}
+	}
+	if assigner, ok := asAssigner(dst); ok {
+		err = assigner.AssignByJSONPointer(&cur, nv.Elem().Interface())
+		if err != nil {
+			if !errors.Is(err, YieldOperation) {
+				return dst, newError(err, *s, dst.Elem().Type())
+			} else {
+				cur = s.current
+			}
+		} else {
+			return dst, nil
+		}
+		// updating state to reflect the new token if it was set by assigner
+		s.current = cur
+	}
+	rn, err = s.assignValue(rn, nv.Elem())
+	if err != nil {
+		return rn, err
+	}
+
+	switch dst.Elem().Kind() {
+	case reflect.Map:
+		err = s.setMapIndex(dst.Elem(), t, rn.Elem())
+	case reflect.Slice:
+		err = s.setSliceIndex(dst, t, rn.Elem())
+	}
+	if err != nil {
+		return reflect.Value{}, newError(err, *s, dst.Elem().Type())
+	}
+	if cpy.IsValid() {
+		rn, err = s.marshal(dst)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		cpy.Elem().SetBytes(rn.Elem().Bytes())
+		return cpy, nil
+	}
+	return dst, nil
+}
+
 func (s *state) setValue(dst reflect.Value, v reflect.Value) error {
 	switch dst.Kind() {
 	case reflect.Interface:
@@ -202,17 +420,10 @@ func (s *state) setValue(dst reflect.Value, v reflect.Value) error {
 			return newError(ErrNotAssignable, *s, dst.Type())
 		}
 		return s.setValue(dst.Elem(), v)
-
 	case reflect.Ptr:
-		switch {
-		case v.Type().AssignableTo(dst.Type().Elem()):
+		if v.Type().AssignableTo(dst.Type().Elem()) {
 			dst.Elem().Set(v)
 			return nil
-		case v.Type().AssignableTo(typeReader):
-			panic("reader not implemented")
-		case v.Type().AssignableTo(typeByteSlice):
-			// if src is []byte and dst is not then we unmarshal the json
-			return json.Unmarshal(v.Interface().([]byte), dst.Interface())
 		}
 		// none of the above is true
 		return newValueError(ErrNotAssignable, *s, dst.Type(), v.Type())
@@ -234,11 +445,17 @@ func (s state) marshal(v reflect.Value) (reflect.Value, error) {
 
 func (s state) unmarshal(v reflect.Value) (reflect.Value, error) {
 	var i interface{}
+	if len(v.Bytes()) == 0 {
+		return reflect.Value{}, nil
+	}
 	err := json.Unmarshal(v.Bytes(), &i)
 	if err != nil {
 		return v, newError(err, s, reflect.TypeOf(v))
 	}
-	return reflect.ValueOf(i), nil
+	iv := reflect.ValueOf(i)
+	ptr := reflect.New(iv.Type())
+	ptr.Elem().Set(iv)
+	return ptr, nil
 }
 
 func (s *state) resolveNext(v reflect.Value, t Token) (reflect.Value, error) {
@@ -378,8 +595,8 @@ func (s state) resolveSlice(v reflect.Value, t Token) (reflect.Value, error) {
 	return v.Index(i), nil
 }
 
-func (s state) deleteMapIndex(v reflect.Value) error {
-	panic("not impl") // TODO: impl
+func (s state) deleteMapIndex(v reflect.Value, t Token) error {
+	return s.setMapIndex(v, t, reflect.Value{})
 }
 
 func (s state) JSONPointer() JSONPointer {
@@ -389,78 +606,6 @@ func (s state) JSONPointer() JSONPointer {
 // CurrentJSONPointer returns the JSONPointer at the time of the error.
 func (s state) CurrentJSONPointer() JSONPointer {
 	return s.current
-}
-
-
-	if rn.CanAddr() {
-		rn = rn.Addr()
-	} else {
-		pv := reflect.New(rn.Type())
-		pv.Elem().Set(rn)
-		rn = pv
-	}
-	var nv reflect.Value
-	nv, err = s.assign(rn, val)
-
-	var nve interface{}
-
-	fmt.Println("============= NEW =============")
-	nve = nv.Elem().Interface()
-	litter.Dump(nve)
-	fmt.Printf("===============================\n")
-	if err != nil {
-		return dst, err
-	}
-
-	s.current = s.current.Prepend(t)
-	if dst.Type().NumMethod() > 0 && dst.CanInterface() && dst.Type().Implements(typeAssigner) {
-		if assigner, ok := dst.Interface().(Assigner); ok {
-			err = assigner.AssignByJSONPointer(&cur, nv.Elem().Interface())
-			if err != nil {
-				if !errors.Is(err, YieldOperation) {
-					return dst, newError(err, *s, dst.Elem().Type())
-				} else {
-					// the Assigner has yielded operation back to jsonpointer
-					// resetting current incase the Assigner mutated it
-					cur = s.current
-				}
-			} else {
-				return dst, nil
-			}
-			// updating state to reflect the new token if it was set by assigner
-			s.current = cur
-		}
-	} else if dst.Elem().Type().NumMethod() > 0 && dst.Elem().CanInterface() && dst.Type().Elem().Implements(typeAssigner) {
-		if assigner, ok := dst.Elem().Interface().(Assigner); ok {
-			err = assigner.AssignByJSONPointer(&cur, nv.Elem().Interface())
-			if err != nil {
-				if !errors.Is(err, YieldOperation) {
-					return dst, newError(err, *s, dst.Elem().Type())
-				} else {
-					cur = s.current
-				}
-			} else {
-				return dst, nil
-			}
-			// updating state to reflect the new token if it was set by assigner
-			s.current = cur
-		}
-	}
-	rn, err = s.assignValue(rn, nv.Elem())
-	if err != nil {
-		return rn, err
-	}
-
-	switch dst.Elem().Kind() {
-	case reflect.Map:
-		err = s.setMapIndex(dst.Elem(), t, rn.Elem())
-	case reflect.Slice:
-		err = s.setSliceIndex(dst, t, rn.Elem())
-	}
-	if err != nil {
-		return reflect.Value{}, newError(err, *s, dst.Elem().Type())
-	}
-	return dst, nil
 }
 
 func (s *state) assignValue(dst reflect.Value, val reflect.Value) (reflect.Value, error) {
@@ -487,8 +632,13 @@ func (s *state) assignValue(dst reflect.Value, val reflect.Value) (reflect.Value
 	return val, newValueError(ErrNotAssignable, *s, dst.Elem().Type(), val.Type())
 }
 
-func (s *state) delete(src reflect.Value) error {
-	panic("not implemented") // TODO: impl
+func (s *state) deleteValue(dst reflect.Value) error {
+	if !dst.Elem().CanSet() {
+		return newError(ErrNotAssignable, *s, dst.Type())
+	}
+	z := reflect.Zero(dst.Elem().Type())
+	dst.Elem().Set(z)
+	return nil
 }
 
 func (s state) sliceIndex(src reflect.Value, t Token) (int, error) {
@@ -628,8 +778,21 @@ func (s *state) setMapIndex(m reflect.Value, token Token, v reflect.Value) error
 }
 
 func isByteSlice(v reflect.Value) bool {
-	if v.Kind() == reflect.Interface && v.Elem().Type().AssignableTo(typeByteSlice) {
+	if v.IsValid() && v.Kind() == reflect.Interface && v.Elem().IsValid() && v.Elem().Type().AssignableTo(typeByteSlice) {
 		return true
 	}
 	return v.Type().AssignableTo(typeByteSlice)
+}
+
+func asAssigner(v reflect.Value) (Assigner, bool) {
+	if v.Type().NumMethod() > 0 && v.CanInterface() {
+		as, ok := v.Interface().(Assigner)
+		if ok {
+			return as, true
+		}
+	}
+	if v.Kind() == reflect.Ptr {
+		return asAssigner(v.Elem())
+	}
+	return nil, false
 }

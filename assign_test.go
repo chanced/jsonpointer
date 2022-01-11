@@ -83,6 +83,13 @@ func TestAssign(t *testing.T) {
 			assert.NoError(err)
 			assert.Equal(v, r.Nested.InterContainer.Interface.Value())
 		}},
+		{"/nested/json/obj/value", "val", func(v interface{}, err error) {
+			assert.NoError(err)
+			var jv JSONValue
+			err = json.Unmarshal(r.Nested.JSON, &jv)
+			assert.NoError(err)
+			assert.Equal(v, jv.Obj.Value)
+		}},
 	}
 
 	for i, test := range tests {
@@ -92,8 +99,8 @@ func TestAssign(t *testing.T) {
 
 		fmt.Println("--- PASS")
 	}
-	b, _ := json.MarshalIndent(r, "", "  ")
-	fmt.Println(string(b))
+	// b, _ := json.MarshalIndent(r, "", "  ")
+	// fmt.Println(string(b))
 }
 
 func TestAssignAny(t *testing.T) {

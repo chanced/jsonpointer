@@ -40,7 +40,7 @@ type Nested struct {
 	StrArray       [3]string              `json:"strarray,omitempty"`
 	IntArray       [3]int                 `json:"intarray,omitempty"`
 	Yield          Yield                  `json:"yield"`
-	Raw            json.RawMessage        `json:"raw"`
+	JSON           json.RawMessage        `json:"json"`
 	AnonStructPtr  *struct {
 		Value string
 	} `json:"anonptr"`
@@ -245,4 +245,10 @@ type Yield struct {
 
 func (y Yield) ResolveJSONPointer(p *jsonpointer.JSONPointer, op jsonpointer.Operation) (interface{}, error) {
 	return nil, jsonpointer.YieldOperation
+}
+
+type JSONValue struct {
+	Obj struct {
+		Value string `json:"value"`
+	} `json:"obj"`
 }
