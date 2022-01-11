@@ -1,3 +1,16 @@
+// Copyright 2022 Chance Dinkins
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+//
+// The License can be found in the LICENSE file.
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package jsonpointer
 
 import (
@@ -14,7 +27,6 @@ import (
 var (
 	// valinfoPool         sync.Pool
 	statePool           sync.Pool
-	typeJSON            = reflect.TypeOf(JSON{})
 	typeAssigner        = reflect.TypeOf((*Assigner)(nil)).Elem()
 	typeByteSlice       = reflect.TypeOf([]byte{})
 	typeReader          = reflect.TypeOf((*io.Reader)(nil)).Elem()
@@ -160,42 +172,7 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 			rn.Set(reflect.MakeSlice(rn.Type(), 0, 1))
 		}
 	case reflect.Invalid:
-		switch dst.Type().Elem().Kind() {
-		case reflect.Map, reflect.Slice:
-			rn = reflect.Zero(dst.Type().Elem().Elem())
-			if rn.Kind() == reflect.Ptr && rn.IsNil() {
-				rn = reflect.New(rn.Type().Elem())
-			} else if rn.Type() == typeAny && rn.IsNil() {
-				nt, ok := s.current.NextToken()
-				if !ok {
-					rn = reflect.Zero(val.Type())
-				} else {
-					if _, err = nt.Index(0); err == nil {
-						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
-					} else {
-						rn = reflect.MakeMap(typeAnyMap)
-					}
-				}
-			}
-		case reflect.Interface:
-			_, nt, ok := s.current.Next()
-			if !ok {
-				return reflect.Value{}, newError(ErrMalformedToken, *s, dst.Type())
-			}
-			if rn.Type() == typeAny {
-				if s.current.IsRoot() {
-					rn = reflect.Zero(val.Type())
-				} else {
-					if _, err = nt.Index(0); err == nil {
-						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
-					} else {
-						rn = reflect.MakeMap(typeAnyMap)
-					}
-				}
-			}
-		default:
-			return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
-		}
+		// not sure what to do here yet.
 	}
 
 	if rn.CanAddr() {
@@ -338,9 +315,8 @@ func (s *state) delete(dst reflect.Value) (reflect.Value, error) {
 		}
 	case reflect.Invalid:
 		return dst, nil
-		default:
-			return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
-		}
+	default:
+		return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
 	}
 
 	if rn.CanAddr() {
@@ -351,7 +327,7 @@ func (s *state) delete(dst reflect.Value) (reflect.Value, error) {
 		rn = pv
 	}
 	var nv reflect.Value
-	nv, err = s.assign(rn, val)
+	nv, err = s.delete(rn)
 
 	if err != nil {
 		return dst, err
