@@ -4,6 +4,12 @@ Package jsonpointer provides the ability to resolve, assign, and delete values
 of any type, including raw JSON, by [JSON
 Pointers](https://datatracker.ietf.org/doc/html/rfc6901).
 
+## Motivation
+
+jsonpointer was built to support
+[github.com/chanced/openapi](https://github.com/chanced/openapi) but it may be
+useful for others so it has been released as an independent package.
+
 ## Install
 
 ```bash
@@ -142,12 +148,6 @@ Depending on the cause, the error could also be `KeyError`, `IndexError`, `Field
 Finally, all errors have associated Err instances that are wrapped, such as `ErrMalformedToken`, `ErrInvalidKeyType`, and so on.
 
 See [errors.go for further details on errors](https://github.com/chanced/jsonpointer/blob/main/errors.go).
-
-## Motivation
-
-jsonpointer was built to support
-[github.com/chanced/openapi](https://github.com/chanced/openapi) but it may be
-useful for others so it has been released as an independent package.
 
 ## Contributions & Issues
 
