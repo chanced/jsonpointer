@@ -20,7 +20,13 @@ import (
 	"strings"
 )
 
-// YieldOperation returns resolution back to jsonpointer's internal resolution.
+// YieldOperation returns resolution back to jsonpointer. This error can be
+// utilized within methods satisfying Resolver (ResolveJSONPointer), Assigner
+// (AssignByJSONPointer), and Deleter (DeleteByJSONPointer) as an escape hatch.
+//
+// The intent is is that there may only be certain fields that your application
+// would like to manually resolve. For the rest, you'd return YieldOperation as
+// the error.
 var YieldOperation = errors.New("yield resolution to jsonpointer")
 
 var (
@@ -107,6 +113,14 @@ func (p JSONPointer) PrependString(token string) JSONPointer {
 	return p.Prepend(Token(encoder.Replace(token)))
 }
 
+// Validate performs validation on p. The following checks are performed:
+//
+// - p must be either empty or start with '/
+//
+// - p must be properly encoded, meaning that '~' must be immediately followed
+// by a '0' or '1'.
+//
+//
 func (p JSONPointer) Validate() (err error) {
 	if err = p.validateStart(); err != nil {
 		return err
@@ -118,8 +132,11 @@ func (p JSONPointer) validateeEncoding() error {
 	if len(p) == 0 {
 		return nil
 	}
+	if p[len(p)-1] == '~' {
+		return ErrMalformedEncoding
+	}
 	for i := len(p) - 1; i >= 0; i-- {
-		if p[i] == '~' && (i == len(p)-1 || (p[i+1] != '0' && p[i+1] != '1')) {
+		if p[i] == '~' && (p[i+1] != '0' && p[i+1] != '1') {
 			return ErrMalformedEncoding
 		}
 	}
