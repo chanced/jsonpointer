@@ -18,10 +18,15 @@ import (
 	"reflect"
 )
 
+// Resolver is the interface that is implemented by types which can resolve json
+// pointers. The method is expected not to have side effects to the source.
 type Resolver interface {
 	ResolveJSONPointer(ptr *JSONPointer, op Operation) (interface{}, error)
 }
 
+// Resolve performs resolution on src by traversing the path of the JSON Pointer
+// and assigning the value to dst. If the path can not be reached, an error is
+// returned.
 func Resolve(src interface{}, ptr JSONPointer, dst interface{}) error {
 	dv := reflect.ValueOf(dst)
 	s := newState(ptr, Resolving)

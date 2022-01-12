@@ -15,6 +15,8 @@ package jsonpointer
 
 import "reflect"
 
+// Deleter is an interface that is implemented by any type which can delete a
+// value by JSON pointer.
 type Deleter interface {
 	DeleteByJSONPointer(ptr *JSONPointer) error
 }

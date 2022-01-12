@@ -18,59 +18,54 @@ import (
 	"strconv"
 )
 
+// Decode decodes a JSON Pointer token by replacing each encoded slash ("~1")
+// with '/' (%x2F) and each encoded tilde ("~0") with '~' (%x7E).
 func Decode(token string) string {
 	return decoder.Replace(token)
 }
 
+// Encode encodes a string to a token of a JSON Pointer by replacing each '~'
+// (%x7E) with "~0" and '/' (%x2F) with "~1".
 func Encode(token string) string {
 	return encoder.Replace(token)
 }
 
+// Token is a segment of a JSON Pointer, divided by '/' (%x2F).
 type Token string
 
+// Bytes returns the decoded Bytes of t
 func (t Token) Bytes() []byte {
-	return []byte(t)
+	return []byte(t.String())
 }
 
+// String returns the decoded value of t
 func (t Token) String() string {
 	return decoder.Replace(string(t))
 }
 
+// Int64 attempts to parse t as an int64. If t can be parsed as an int64 then
+// the value is returned. If t can not be parsed as an int64 then an error is
+// returned.
 func (t Token) Int64() (int64, error) {
 	return strconv.ParseInt(t.String(), 10, 64)
 }
 
+// Uint64 attempts to parse t as an uint64. If t can be parsed as an uint64 then
+// the value is returned. If t can not be parsed as an uint64 then an error is
+// returned.
 func (t Token) Uint64() (uint64, error) {
 	return strconv.ParseUint(t.String(), 10, 64)
 }
 
+// Int attempts to parse t as an int. If t can be parsed as an int then
+// the value is returned. If t can not be parsed as an int then an error is
+// returned.
 func (t Token) Int() (int, error) {
 	return strconv.Atoi(t.String())
 }
 
 func (t Token) ptr() JSONPointer {
 	return JSONPointer(t)
-}
-
-// Tokens is a slice of Tokens.
-type Tokens []Token
-
-// Strings returns ts as a slice of strings
-func (ts Tokens) Strings() []string {
-	s := make([]string, len(ts))
-	for i, t := range ts {
-		s[i] = t.String()
-	}
-	return s
-}
-
-// Stringers returns ts as a slice of fmt.Stringers
-func (ts Tokens) Stringers() []fmt.Stringer {
-	s := make([]fmt.Stringer, len(ts))
-	for i, t := range ts {
-		s[i] = t
-	}
-	return s
 }
 
 // Index parses t for an index value. If t can be parsed as an int, is equal to
@@ -102,4 +97,25 @@ func (t Token) Index(next int) (int, error) {
 		}
 	}
 	return i, nil
+}
+
+// Tokens is a slice of Tokens.
+type Tokens []Token
+
+// Strings returns ts as a slice of strings
+func (ts Tokens) Strings() []string {
+	s := make([]string, len(ts))
+	for i, t := range ts {
+		s[i] = t.String()
+	}
+	return s
+}
+
+// Stringers returns ts as a slice of fmt.Stringers
+func (ts Tokens) Stringers() []fmt.Stringer {
+	s := make([]fmt.Stringer, len(ts))
+	for i, t := range ts {
+		s[i] = t
+	}
+	return s
 }

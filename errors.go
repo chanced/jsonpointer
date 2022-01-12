@@ -165,6 +165,9 @@ func IsKeyError(err error) bool {
 	return ok
 }
 
+// AsKeyError returns err as a ValueError, if possible. It does so by calling
+// errors.As, returning a KeyError and true if successful. If unsuccessful, nil
+// and false is returned.
 func AsKeyError(err error) (KeyError, bool) {
 	var e KeyError
 	return e, errors.As(err, &e)
@@ -243,6 +246,7 @@ func IsValueError(err error) bool {
 	return ok
 }
 
+// AsValueError returns err as a ValueError, if possible.
 func AsValueError(err error) (ValueError, bool) {
 	var e ValueError
 	return e, errors.As(err, &e)
@@ -317,9 +321,9 @@ func (e *indexError) Error() string {
 	return fmt.Sprintf("%v for index %d of %d", e.err.Error(), e.index, e.maxIndex)
 }
 
-// AsIndexError is a convenience function which calls calls errors.As, returning
-// err as an IndexError and true or nil and false if err can not be assigned to
-// an IndexError
+// AsIndexError returns err as a IndexError, if possible. It does so by calling
+// errors.As, returning a IndexError and true if successful. If unsuccessful, nil
+// and false is returned.
 func AsIndexError(err error) (IndexError, bool) {
 	var ie IndexError
 	return ie, errors.As(err, &ie)
