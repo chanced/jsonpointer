@@ -26,18 +26,14 @@ type Deleter interface {
 // If any part of the path is unreachable, the Delete function is
 // considered a success as the value is not present to delete.
 func Delete(src interface{}, ptr JSONPointer) error {
-	if err := ptr.Validate(); err != nil {
-		return err
-	}
 	dv := reflect.ValueOf(src)
 	s := newState(ptr, Deleting)
 	defer s.Release()
+	if err := ptr.Validate(); err != nil {
+		return newError(err, *s, dv.Type())
+	}
 	if dv.Kind() != reflect.Ptr || dv.IsNil() {
-		return &ptrError{
-			state: *s,
-			err:   ErrNonPointer,
-			typ:   dv.Type(),
-		}
+		return newError(ErrNonPointer, *s, dv.Type())
 	}
 	cpy := dv
 	dv = dv.Elem()

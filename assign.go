@@ -39,21 +39,17 @@ type Assigner interface {
 // with the updated value pertinent to that path.
 //
 func Assign(dst interface{}, ptr JSONPointer, value interface{}) error {
-	if err := ptr.Validate(); err != nil {
-		return err
-	}
 	if value == nil {
 		return Delete(dst, ptr)
 	}
 	dv := reflect.ValueOf(dst)
 	s := newState(ptr, Assigning)
 	defer s.Release()
+	if err := ptr.Validate(); err != nil {
+		return newError(err, *s, dv.Type())
+	}
 	if dv.Kind() != reflect.Ptr || dv.IsNil() {
-		return &ptrError{
-			state: *s,
-			err:   ErrNonPointer,
-			typ:   dv.Type(),
-		}
+		return newError(ErrNonPointer, *s, dv.Type())
 	}
 	cpy := dv
 	dv = dv.Elem()
