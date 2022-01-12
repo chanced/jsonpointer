@@ -148,9 +148,9 @@ func (mt MyType) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op Operation) 
 
 ## Errors
 
-All errors returned from `Resolve`, `Assign`, and `Delete` will implement `Error`. A convenience method `AsError` exists to help extract out the details.
+All errors returned from `Resolve`, `Assign`, and `Delete` will implement `Error`. A convenience function `AsError` exists to help extract out the details.
 
-Depending on the cause, the error could also be `KeyError`, `IndexError`, `FieldError` with additional details. All have corresponding `As{Error}` methods.
+Depending on the cause, the error could also be `KeyError`, `IndexError`, `FieldError` with additional details. All have corresponding `As{Error}` functions.
 
 Finally, all errors have associated Err instances that are wrapped, such as `ErrMalformedToken`, `ErrInvalidKeyType`, and so on.
 
