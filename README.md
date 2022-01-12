@@ -1,10 +1,10 @@
 # jsonpointer - an [RFC 6901](https://datatracker.ietf.org/doc/html/rfc6901) implementation for Go
 
-[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square)](https://pkg.go.dev/github.com/chanced/jsonpointer)
-
 Package jsonpointer provides the ability to resolve, assign, and delete values
 of any type, including raw JSON, by [JSON
 Pointers](https://datatracker.ietf.org/doc/html/rfc6901).
+
+[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square)](https://pkg.go.dev/github.com/chanced/jsonpointer)
 
 ## Motivation
 
