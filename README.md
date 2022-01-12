@@ -110,7 +110,7 @@ Package jsonpointer provides 3 interfaces: `Assigner`, `Resolver`, and
 called. `ResolveJSONPointer` should not have side effects. If resolving for an assignment, utilize the
 pointer to infer which type should be assigned.
 
-Both `AssignByJSONPointer` and `DeleteByJSONPointer` are invoked on the way back from the leaf.
+`AssignByJSONPointer` is invoked on the way back from the leaf. `DeleteByJSONPointer` is invoked after resolving the current token.
 
 All three methods are passed a pointer to the `jsonpointer.JSONPointer` so that
 it can be modified. If you do not modify it, jsonpointer will assume the current
