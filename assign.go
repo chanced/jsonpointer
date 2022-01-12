@@ -17,10 +17,27 @@ import (
 	"reflect"
 )
 
+// Assigner is the interface implemented by types which can assign values via
+// JSON Pointers. The input can be assumed to be a valid JSON Pointer and the
+// value to assign.
+//
+// AssignByJSONPointer is called after the value has been resolved. If custom
+// resolution is needed, the type should also implement Resolver.
+//
 type Assigner interface {
 	AssignByJSONPointer(ptr *JSONPointer, value interface{}) error
 }
 
+// Assign performs an assignment of value to the target dst specified by the
+// JSON Pointer ptr. Assign traverses dst recursively, resolving the path of
+// the JSON Pointer. If a type in the path implements Resolver, it will attempt
+// to resolve by invoking ResolveJSONPointer on that value. If ResolveJSONPointer
+// returns YieldOperation or if the value does not implement ResolveJSONPointer,
+// encoding/json naming conventions are utilized to resolve the path.
+//
+// If a type in the path implements Assigner, AssignByJSONPointer will be called
+// with the updated value pertinent to that path.
+//
 func Assign(dst interface{}, ptr JSONPointer, value interface{}) error {
 	if err := ptr.Validate(); err != nil {
 		return err

@@ -19,12 +19,16 @@ type Deleter interface {
 	DeleteByJSONPointer(ptr *JSONPointer) error
 }
 
+// Delete deletes the value at the given JSON pointer from src.
+//
+// If any part of the path is unreachable, the Delete function is
+// considered a success as the value is not present to delete.
 func Delete(src interface{}, ptr JSONPointer) error {
 	if err := ptr.Validate(); err != nil {
 		return err
 	}
 	dv := reflect.ValueOf(src)
-	s := newState(ptr, Assigning)
+	s := newState(ptr, Deleting)
 	defer s.Release()
 	if dv.Kind() != reflect.Ptr || dv.IsNil() {
 		return &ptrError{

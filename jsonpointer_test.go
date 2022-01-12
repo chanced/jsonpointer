@@ -14,7 +14,7 @@
 package jsonpointer_test
 
 import (
-	"strings"
+	"fmt"
 	"testing"
 
 	"github.com/chanced/jsonpointer"
@@ -42,12 +42,38 @@ func TestNew(t *testing.T) {
 		{jsonpointer.New("/foo/bar/baz"), "/~1foo~1bar~1baz"},
 		{jsonpointer.New("/"), "/~1"},
 		{jsonpointer.New(), ""},
-		{jsonpointer.New(strings.Split("#/foo/bar/baz", "/")...), "/foo/bar/baz"},
 		{jsonpointer.New("~"), "/~0"},
-		{jsonpointer.New("\\#"), "/#"},
 	}
 	for _, e := range tests {
 		assert.Equal(e.expectedstring, e.pointer.String())
+	}
+}
+
+func TestJSONPointerValidate(t *testing.T) {
+	assert := require.New(t)
+	tests := []struct {
+		ptr jsonpointer.JSONPointer
+		err error
+	}{
+		{"", nil},
+		{"/", nil},
+		{"/foo~", jsonpointer.ErrMalformedEncoding},
+		{"/foo~1", nil},
+		{"/foo~1bar", nil},
+		{"foo/bar", jsonpointer.ErrMalformedStart},
+		{"/foo/bar", nil},
+		{"/~/", jsonpointer.ErrMalformedEncoding},
+	}
+	for i, test := range tests {
+		fmt.Printf("=== RUN TestJSONPointerValidate #%d, pointer %s\n", i+1, test.ptr)
+		err := test.ptr.Validate()
+		if test.err != nil {
+			assert.Error(err)
+			assert.ErrorIs(err, test.err)
+		} else {
+			assert.NoError(err)
+		}
+		fmt.Println("--- PASS")
 	}
 }
 

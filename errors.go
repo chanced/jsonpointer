@@ -27,7 +27,13 @@ var (
 	// This error is returned by JSONPointer.Validate() which is called by
 	// Resolve, Assign, and Delete.
 	//
-	ErrMalformedToken = fmt.Errorf(`jsonpointer: reference must be empty or start with a "/"`)
+	ErrMalformedToken = errors.New(`jsonpointer: fragment is malformed`)
+
+	// ErrMalformedStart is an ErrMalformedToken that is returned when the JSON
+	// Pointer is not empty or does not start with a "/".
+	ErrMalformedStart = fmt.Errorf(`%w; pointer must be an empty string or start with "/"`, ErrMalformedToken)
+
+	ErrMalformedEncoding = fmt.Errorf("%w; '~' must be encoded as ~0", ErrMalformedToken)
 
 	// ErrNonPointer indicates a non-pointer value was passed to Assign.
 	//

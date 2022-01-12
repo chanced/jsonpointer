@@ -172,9 +172,43 @@ func (s *state) assign(dst reflect.Value, val reflect.Value) (reflect.Value, err
 			rn.Set(reflect.MakeSlice(rn.Type(), 0, 1))
 		}
 	case reflect.Invalid:
-		// not sure what to do here yet.
+		switch dst.Type().Elem().Kind() {
+		case reflect.Map, reflect.Slice:
+			rn = reflect.Zero(dst.Type().Elem().Elem())
+			if rn.Kind() == reflect.Ptr && rn.IsNil() {
+				rn = reflect.New(rn.Type().Elem())
+			} else if rn.Type() == typeAny && rn.IsNil() {
+				nt, ok := s.current.NextToken()
+				if !ok {
+					rn = reflect.Zero(val.Type())
+				} else {
+					if _, err = nt.Index(0); err == nil {
+						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
+					} else {
+						rn = reflect.MakeMap(typeAnyMap)
+					}
+				}
+			}
+		case reflect.Interface:
+			_, nt, ok := s.current.Next()
+			if !ok {
+				return reflect.Value{}, newError(ErrMalformedToken, *s, dst.Type())
+			}
+			if rn.Type() == typeAny {
+				if s.current.IsRoot() {
+					rn = reflect.Zero(val.Type())
+				} else {
+					if _, err = nt.Index(0); err == nil {
+						rn = reflect.MakeSlice(typeAnySlice, 0, 1)
+					} else {
+						rn = reflect.MakeMap(typeAnyMap)
+					}
+				}
+			}
+		default:
+			return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
+		}
 	}
-
 	if rn.CanAddr() {
 		rn = rn.Addr()
 	} else {
@@ -254,7 +288,9 @@ func (s *state) delete(dst reflect.Value) (reflect.Value, error) {
 		err := s.deleteValue(dst)
 		return dst, err
 	}
+
 	s.current, t, ok = cur.Next()
+
 	if !ok {
 		return reflect.Value{}, fmt.Errorf("unexpected end of JSON pointer %v", cur)
 	}
@@ -273,8 +309,7 @@ func (s *state) delete(dst reflect.Value) (reflect.Value, error) {
 				return reflect.Value{}, newError(ErrMalformedToken, *s, dst.Type())
 			}
 			if s.current.IsRoot() {
-				err := s.deleteValue(dst)
-				return dst, err
+				dst.SetBytes([]byte{})
 			} else {
 				if _, err = nt.Index(0); err == nil {
 					dst = reflect.MakeSlice(typeAnySlice, 0, 1)
@@ -288,12 +323,48 @@ func (s *state) delete(dst reflect.Value) (reflect.Value, error) {
 		}
 	}
 
+	if cpy.IsValid() {
+		if deleter, ok := asDeleter(cpy); ok {
+			err = deleter.DeleteByJSONPointer(&cur)
+			if err != nil {
+				if !errors.Is(err, YieldOperation) {
+					return dst, newError(err, *s, dst.Elem().Type())
+				} else {
+					cur = s.current
+				}
+			} else {
+				return dst, nil
+			}
+			s.current = cur
+		}
+	}
+	if deleter, ok := asDeleter(dst); ok {
+		err = deleter.DeleteByJSONPointer(&cur)
+		if err != nil {
+			if !errors.Is(err, YieldOperation) {
+				return dst, newError(err, *s, dst.Elem().Type())
+			} else {
+				cur = s.current
+			}
+		} else {
+			return dst, nil
+		}
+		// updating state to reflect the new token if it was set by deleter
+		s.current = cur
+	}
 	// new dst
 	var rn reflect.Value
-
 	rn, err = s.resolveNext(dst, t)
+	// cur = s.current
 	if err != nil {
 		return rn, err
+	}
+
+	if !ok {
+		return dst, newError(ErrMalformedToken, *s, dst.Type())
+	}
+	if rn.IsValid() && rn.CanInterface() && rn.Type() == typeAny && !rn.IsNil() {
+		rn = rn.Elem()
 	}
 
 	switch rn.Kind() {
@@ -303,22 +374,37 @@ func (s *state) delete(dst reflect.Value) (reflect.Value, error) {
 		}
 	case reflect.Ptr:
 		if rn.IsNil() {
-			rn.Set(reflect.New(rn.Type().Elem()))
+			s.current = ""
+		} else if s.current.IsRoot() {
+			s.current = ""
+			rn.Set(reflect.ValueOf(nil))
 		}
 	case reflect.Map:
-		if rn.IsNil() {
-			rn.Set(reflect.MakeMap(rn.Type()))
+		switch {
+		case rn.IsNil():
+			s.current = ""
+		case s.current.IsRoot():
+			s.current = ""
+			err = s.deleteMapIndex(rn, t)
+			if err != nil {
+				return reflect.Value{}, err
+			}
 		}
 	case reflect.Slice:
-		if rn.IsNil() {
-			rn.Set(reflect.MakeSlice(rn.Type(), 0, 1))
+		switch {
+		case rn.IsNil():
+			s.current = ""
+		case s.current.IsRoot():
+			err = s.deleteSliceIndex(rn, t)
+			if err != nil {
+				return reflect.Value{}, err
+			}
+			s.current = ""
 		}
 	case reflect.Invalid:
+		s.current = ""
 		return dst, nil
-	default:
-		return reflect.Value{}, newError(ErrUnreachable, *s, dst.Type())
 	}
-
 	if rn.CanAddr() {
 		rn = rn.Addr()
 	} else {
@@ -332,48 +418,26 @@ func (s *state) delete(dst reflect.Value) (reflect.Value, error) {
 	if err != nil {
 		return dst, err
 	}
-
+	cur = s.current
 	s.current = s.current.Prepend(t)
-	if cpy.IsValid() {
-		if assigner, ok := asAssigner(cpy); ok {
-			err = assigner.AssignByJSONPointer(&cur, nv.Elem().Interface())
-			if err != nil {
-				if !errors.Is(err, YieldOperation) {
-					return dst, newError(err, *s, dst.Elem().Type())
-				} else {
-					cur = s.current
-				}
-			} else {
-				return dst, nil
-			}
-			// updating state to reflect the new token if it was set by assigner
-			s.current = cur
-		}
-	}
-	if assigner, ok := asAssigner(dst); ok {
-		err = assigner.AssignByJSONPointer(&cur, nv.Elem().Interface())
-		if err != nil {
-			if !errors.Is(err, YieldOperation) {
-				return dst, newError(err, *s, dst.Elem().Type())
-			} else {
-				cur = s.current
-			}
-		} else {
-			return dst, nil
-		}
-		// updating state to reflect the new token if it was set by assigner
-		s.current = cur
-	}
+
 	rn, err = s.assignValue(rn, nv.Elem())
 	if err != nil {
 		return rn, err
 	}
-
 	switch dst.Elem().Kind() {
 	case reflect.Map:
-		err = s.setMapIndex(dst.Elem(), t, rn.Elem())
+		if cur.IsRoot() {
+			err = s.deleteMapIndex(dst.Elem(), t)
+		} else {
+			err = s.setMapIndex(dst.Elem(), t, rn.Elem())
+		}
 	case reflect.Slice:
-		err = s.setSliceIndex(dst, t, rn.Elem())
+		if cur.IsRoot() {
+			err = s.deleteSliceIndex(dst, t)
+		} else {
+			err = s.setSliceIndex(dst, t, rn.Elem())
+		}
 	}
 	if err != nil {
 		return reflect.Value{}, newError(err, *s, dst.Elem().Type())
@@ -719,6 +783,25 @@ func (s *state) mapKey(src reflect.Value, t Token) (reflect.Value, error) {
 	return kv, nil
 }
 
+func (s *state) deleteSliceIndex(l reflect.Value, token Token) error {
+	e := l.Elem()
+	i, err := s.sliceIndex(e, token)
+	if err != nil {
+		return err
+	}
+	if i >= l.Elem().Len() {
+		return nil
+	}
+
+	reflect.Copy(e.Slice(i, e.Len()), e.Slice(i+1, e.Len()))
+
+	e.Index(e.Len() - 1).Set(reflect.Zero(e.Type()))
+	e.SetLen(e.Len() - 1)
+	l.Elem().Set(e)
+
+	return nil
+}
+
 func (s *state) setSliceIndex(l reflect.Value, token Token, v reflect.Value) error {
 	i, err := s.sliceIndex(l.Elem(), token)
 	if err != nil {
@@ -769,6 +852,19 @@ func asAssigner(v reflect.Value) (Assigner, bool) {
 	}
 	if v.Kind() == reflect.Ptr {
 		return asAssigner(v.Elem())
+	}
+	return nil, false
+}
+
+func asDeleter(v reflect.Value) (Deleter, bool) {
+	if v.Type().NumMethod() > 0 && v.CanInterface() {
+		del, ok := v.Interface().(Deleter)
+		if ok {
+			return del, true
+		}
+	}
+	if v.Kind() == reflect.Ptr {
+		return asDeleter(v.Elem())
 	}
 	return nil, false
 }

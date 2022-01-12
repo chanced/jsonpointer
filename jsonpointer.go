@@ -42,7 +42,6 @@ const (
 //  jsonpointer.New("") => "/"
 //  jsonpointer.New("/") => "/~1"
 //  jsonpointer.New("~") => "/~0"
-//  jsonpointer.New("\\#") => "/#"
 //
 func New(tokens ...string) JSONPointer {
 	return NewFromStrings(tokens)
@@ -57,12 +56,6 @@ func NewFromStrings(tokens []string) JSONPointer {
 	b.Grow(len(tokens))
 	if len(tokens) == 0 {
 		return ""
-	}
-	switch tokens[0] {
-	case "#":
-		tokens = tokens[1:]
-	case "\\#":
-		tokens[0] = "#"
 	}
 	for _, token := range tokens {
 		b.WriteRune('/')
@@ -114,19 +107,28 @@ func (p JSONPointer) PrependString(token string) JSONPointer {
 	return p.Prepend(Token(encoder.Replace(token)))
 }
 
-func (p JSONPointer) Validate() error {
-	if err := p.validateStart(); err != nil {
+func (p JSONPointer) Validate() (err error) {
+	if err = p.validateStart(); err != nil {
 		return err
+	}
+	return p.validateeEncoding()
+}
+
+func (p JSONPointer) validateeEncoding() error {
+	if len(p) == 0 {
+		return nil
+	}
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i] == '~' && (i == len(p)-1 || (p[i+1] != '0' && p[i+1] != '1')) {
+			return ErrMalformedEncoding
+		}
 	}
 	return nil
 }
 
 func (p JSONPointer) validateStart() error {
-	if !startsWithSlash(p) {
-		return &ptrError{
-			err:   ErrMalformedToken,
-			state: *newState(p, 0),
-		}
+	if len(p) > 0 && !startsWithSlash(p) {
+		return ErrMalformedStart
 	}
 	return nil
 }
@@ -198,6 +200,9 @@ func lastSlash(ptr JSONPointer) int {
 }
 
 func startsWithSlash(ptr JSONPointer) bool {
+	if len(ptr) == 0 {
+		return false
+	}
 	return ptr[0] == '/'
 }
 

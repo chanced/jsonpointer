@@ -33,14 +33,14 @@ func TestAssign(t *testing.T) {
 		value interface{}
 		run   func(v interface{}, err error)
 	}{
-		{"/nested/str", "strval", func(val interface{}, err error) {
-			assert.NoError(err)
-			assert.Equal(val, r.Nested.Str)
-		}},
-		{"/nestedptr/str", "x", func(val interface{}, err error) {
-			assert.NoError(err)
-			assert.Equal(val, r.NestedPtr.Str)
-		}},
+		// {"/nested/str", "strval", func(val interface{}, err error) {
+		// 	assert.NoError(err)
+		// 	assert.Equal(val, r.Nested.Str)
+		// }},
+		// {"/nestedptr/str", "x", func(val interface{}, err error) {
+		// 	assert.NoError(err)
+		// 	assert.Equal(val, r.NestedPtr.Str)
+		// }},
 		{"/nested/entrymap/keyval/name", "entry-name", func(v interface{}, err error) {
 			assert.NoError(err)
 			assert.Contains(r.Nested.EntryMap, "keyval")
@@ -165,7 +165,7 @@ func TestAssignAny(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		fmt.Printf("=== RUN TestAssignAny #%d, pointer %s\n", i, test.ptr)
+		fmt.Printf("=== RUN TestAssignAny #%d, pointer %s\n", i+1, test.ptr)
 		err := jsonpointer.Assign(&m, test.ptr, test.value)
 		if test.err != nil {
 			assert.ErrorIs(err, test.err)
@@ -204,7 +204,7 @@ func TestAssignJSON(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		fmt.Printf("=== RUN TestAssignJSON #%d, pointer %s\n", i, test.ptr)
+		fmt.Printf("=== RUN TestAssignJSON #%d, pointer %s\n", i+1, test.ptr)
 		b := []byte(test.json)
 		err := jsonpointer.Assign(&b, test.ptr, test.value)
 		var r Root

@@ -10,6 +10,11 @@ jsonpointer was built to support
 [github.com/chanced/openapi](https://github.com/chanced/openapi) but it may be
 useful for others so it has been released as an independent package.
 
+For the openapi package, I needed a way to resolve and assign JSON Pointers
+against concrete types while also maintaining integrity of pointer values. All
+existing JSON Pointer implementations for Go operate on `map[string]interface{}`
+and `[]interface{}`, raw JSON, or both.
+
 ## Install
 
 ```bash
@@ -119,7 +124,7 @@ All methods return new values rather than modifying the pointer itself. If you w
 func (mt MyType) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op Operation) (interface{}, error) {
     next, t, ok := ptr.Next()
     if !ok {
-        // this will only occur if the ptr is a root token
+        // this will only occur if the ptr is a root token in this circumstance
         return mt
     }
     if op == jsonpointer.Assigning && t == "someInterface" {

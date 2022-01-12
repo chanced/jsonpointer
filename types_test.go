@@ -53,10 +53,24 @@ type Nested struct {
 	StrArray       [3]string              `json:"strarray,omitempty"`
 	IntArray       [3]int                 `json:"intarray,omitempty"`
 	Yield          Yield                  `json:"yield"`
+	Deleter        DeleterImpl            `json:"deleter"`
 	JSON           json.RawMessage        `json:"json"`
 	AnonStructPtr  *struct {
 		Value string
 	} `json:"anonptr"`
+}
+
+type DeleterImpl struct {
+	Values map[string]string
+}
+
+func (d *DeleterImpl) DeleteByJSONPointer(ptr *jsonpointer.JSONPointer) error {
+	t, ok := ptr.NextToken()
+	if !ok {
+		panic("token not available? pointer: " + ptr.String())
+	}
+	delete(d.Values, t.String())
+	return nil
 }
 
 type InterContainer struct {
