@@ -6,16 +6,6 @@ Pointers](https://datatracker.ietf.org/doc/html/rfc6901).
 
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square)](https://pkg.go.dev/github.com/chanced/jsonpointer)
 
-## Motivation
-
-jsonpointer was built to support
-[github.com/chanced/openapi](https://github.com/chanced/openapi) but it may be
-useful for others so it has been released as an independent package.
-
-For the openapi package, I needed a way to resolve and assign JSON Pointers
-against concrete types while also maintaining integrity of pointer values. All
-existing JSON Pointer implementations for Go operate on `map[string]interface{}`
-and `[]interface{}`, raw JSON, or both.
 
 ## Install
 
