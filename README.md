@@ -158,7 +158,7 @@ This package is reflect heavy. While it employs the same caching mechanics as
 `encoding/json` to help alleviate some of the lookup costs, there will always be
 a performance hit with reflection.
 
-There are also probably plenty of ways to improve performance of the package.
+There are probably plenty of ways to improve performance of the package.
 Improvements or criticisms are always welcome.
 
 With regards to raw JSON, `json.Marshal` and `json.Unmarshal` are utilized.
