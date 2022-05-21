@@ -6,7 +6,6 @@ Package jsonpointer provides the ability to resolve, assign, and delete values
 of any type, including raw JSON, by [JSON
 Pointers](https://datatracker.ietf.org/doc/html/rfc6901).
 
-
 ## Install
 
 ```bash
@@ -38,9 +37,9 @@ func main() {
 
     r := Root{ Nested: Nested{ Str: "nested str" }}
 
-    // jsonpointer.JSONPointer is a string type so if you have a properly
+    // jsonpointer.Pointer is a string type so if you have a properly
     // formatted json pointer then you can simply convert it:
-    //  ptr := jsonpointer.JSONPointer(myPointer)
+    //  ptr := jsonpointer.Pointer(myPointer)
     //  err := ptr.Validate()
 
     // Note: jsonpointer.New encodes each token's value.
@@ -96,24 +95,24 @@ func main() {
 ### Interfaces
 
 Package jsonpointer provides 3 interfaces: `Assigner`, `Resolver`, and
-`Deleter`. Regardless of the operation, if `Resolver` is implemented, `ResolveJSONPointer` will be
-called. `ResolveJSONPointer` should not have side effects. If resolving for an assignment, utilize the
+`Deleter`. Regardless of the operation, if `Resolver` is implemented, `ResolvePointer` will be
+called. `ResolvePointer` should not have side effects. If resolving for an assignment, utilize the
 pointer to infer which type should be assigned.
 
-`AssignByJSONPointer` is invoked on the way back from the leaf. `DeleteByJSONPointer` is invoked after resolving the current token.
+`AssignByPointer` is invoked on the way back from the leaf. `DeleteByPointer` is invoked after resolving the current token.
 
-All three methods are passed a pointer to the `jsonpointer.JSONPointer` so that
+All three methods are passed a pointer to the `jsonpointer.Pointer` so that
 it can be modified. If you do not modify it, jsonpointer will assume the current
 token was addressed and continue on.
 
 If you wish to only handle some cases with the interfaces, return `jsonpointer.YieldOperation` to have the jsonpointer package resolve, assign, or delete as if the type did not implement the interface. Note that doing so results in changes to `ptr` being dismissed.
 
-### JSONPointer methods
+### Pointer methods
 
 All methods return new values rather than modifying the pointer itself. If you wish to modify the pointer in one of the interface methods, you will need to reassign it: `*ptr = newPtrVal`
 
 ```go
-func (mt MyType) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op Operation) (interface{}, error) {
+func (mt MyType) ResolvePointer(ptr *jsonpointer.Pointer, op Operation) (interface{}, error) {
     next, t, ok := ptr.Next()
     if !ok {
         // this will only occur if the ptr is a root token in this circumstance
