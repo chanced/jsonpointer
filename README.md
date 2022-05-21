@@ -1,21 +1,11 @@
 # jsonpointer - an [RFC 6901](https://datatracker.ietf.org/doc/html/rfc6901) implementation for Go
 
+[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square)](https://pkg.go.dev/github.com/chanced/jsonpointer)
+
 Package jsonpointer provides the ability to resolve, assign, and delete values
 of any type, including raw JSON, by [JSON
 Pointers](https://datatracker.ietf.org/doc/html/rfc6901).
 
-[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square)](https://pkg.go.dev/github.com/chanced/jsonpointer)
-
-## Motivation
-
-jsonpointer was built to support
-[github.com/chanced/openapi](https://github.com/chanced/openapi) but it may be
-useful for others so it has been released as an independent package.
-
-For the openapi package, I needed a way to resolve and assign JSON Pointers
-against concrete types while also maintaining integrity of pointer values. All
-existing JSON Pointer implementations for Go operate on `map[string]interface{}`
-and `[]interface{}`, raw JSON, or both.
 
 ## Install
 
@@ -110,7 +100,7 @@ Package jsonpointer provides 3 interfaces: `Assigner`, `Resolver`, and
 called. `ResolveJSONPointer` should not have side effects. If resolving for an assignment, utilize the
 pointer to infer which type should be assigned.
 
-Both `AssignByJSONPointer` and `DeleteByJSONPointer` are invoked on the way back from the leaf.
+`AssignByJSONPointer` is invoked on the way back from the leaf. `DeleteByJSONPointer` is invoked after resolving the current token.
 
 All three methods are passed a pointer to the `jsonpointer.JSONPointer` so that
 it can be modified. If you do not modify it, jsonpointer will assume the current
@@ -168,7 +158,7 @@ This package is reflect heavy. While it employs the same caching mechanics as
 `encoding/json` to help alleviate some of the lookup costs, there will always be
 a performance hit with reflection.
 
-There are also probably plenty of ways to improve performance of the package.
+There are probably plenty of ways to improve performance of the package.
 Improvements or criticisms are always welcome.
 
 With regards to raw JSON, `json.Marshal` and `json.Unmarshal` are utilized.
