@@ -49,7 +49,7 @@ func TestResolveField(t *testing.T) {
 	}
 
 	tests := []struct {
-		ptr         jsonpointer.JSONPointer
+		ptr         jsonpointer.Pointer
 		expectedval interface{}
 		expectederr error
 	}{
@@ -101,7 +101,7 @@ func TestResolveMapIndex(t *testing.T) {
 	}
 
 	tests := []struct {
-		ptr         jsonpointer.JSONPointer
+		ptr         jsonpointer.Pointer
 		expectedval interface{}
 		expectederr error
 	}{
@@ -151,7 +151,7 @@ func TestResolveArray(t *testing.T) {
 	}
 
 	tests := []struct {
-		ptr         jsonpointer.JSONPointer
+		ptr         jsonpointer.Pointer
 		expectedval interface{}
 		expectederr error
 	}{
@@ -206,7 +206,7 @@ func TestResolveSlice(t *testing.T) {
 	}
 
 	tests := []struct {
-		ptr         jsonpointer.JSONPointer
+		ptr         jsonpointer.Pointer
 		expectedval interface{}
 		expectederr error
 	}{
@@ -236,7 +236,7 @@ func TestResolveJSON(t *testing.T) {
 	assert := require.New(t)
 
 	tests := []struct {
-		ptr  jsonpointer.JSONPointer
+		ptr  jsonpointer.Pointer
 		json string
 		val  interface{}
 		err  error

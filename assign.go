@@ -25,7 +25,7 @@ import (
 // resolution is needed, the type should also implement Resolver.
 //
 type Assigner interface {
-	AssignByJSONPointer(ptr *JSONPointer, value interface{}) error
+	AssignByJSONPointer(ptr *Pointer, value interface{}) error
 }
 
 // Assign performs an assignment of value to the target dst specified by the
@@ -38,7 +38,7 @@ type Assigner interface {
 // If a type in the path implements Assigner, AssignByJSONPointer will be called
 // with the updated value pertinent to that path.
 //
-func Assign(dst interface{}, ptr JSONPointer, value interface{}) error {
+func Assign(dst interface{}, ptr Pointer, value interface{}) error {
 	if value == nil {
 		return Delete(dst, ptr)
 	}

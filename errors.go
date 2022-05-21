@@ -85,8 +85,8 @@ var (
 // Error is a base error type returned from Resolve, Assign, and Delete.
 type Error interface {
 	error
-	JSONPointer() JSONPointer
-	CurrentJSONPointer() JSONPointer
+	JSONPointer() Pointer
+	CurrentJSONPointer() Pointer
 	Token() (Token, bool)
 	Operation() Operation
 	Unwrap() error
@@ -135,7 +135,7 @@ func (e *ptrError) updateState(s state) {
 }
 
 // JSONPointer returns the initial JSONPointer.
-func (e *ptrError) JSONPointer() JSONPointer {
+func (e *ptrError) JSONPointer() Pointer {
 	return e.ptr
 }
 

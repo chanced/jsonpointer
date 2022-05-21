@@ -18,14 +18,14 @@ import "reflect"
 // Deleter is an interface that is implemented by any type which can delete a
 // value by JSON pointer.
 type Deleter interface {
-	DeleteByJSONPointer(ptr *JSONPointer) error
+	DeleteByJSONPointer(ptr *Pointer) error
 }
 
 // Delete deletes the value at the given JSON pointer from src.
 //
 // If any part of the path is unreachable, the Delete function is
 // considered a success as the value is not present to delete.
-func Delete(src interface{}, ptr JSONPointer) error {
+func Delete(src interface{}, ptr Pointer) error {
 	dv := reflect.ValueOf(src)
 	s := newState(ptr, Deleting)
 	defer s.Release()

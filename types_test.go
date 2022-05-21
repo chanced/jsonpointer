@@ -64,7 +64,7 @@ type DeleterImpl struct {
 	Values map[string]string
 }
 
-func (d *DeleterImpl) DeleteByJSONPointer(ptr *jsonpointer.JSONPointer) error {
+func (d *DeleterImpl) DeleteByJSONPointer(ptr *jsonpointer.Pointer) error {
 	t, ok := ptr.NextToken()
 	if !ok {
 		panic("token not available? pointer: " + ptr.String())
@@ -77,7 +77,7 @@ type InterContainer struct {
 	Interface Interface `json:",inline"`
 }
 
-func (ic *InterContainer) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v interface{}) error {
+func (ic *InterContainer) AssignByJSONPointer(ptr *jsonpointer.Pointer, v interface{}) error {
 	switch typ := v.(type) {
 	case Interface:
 		ic.Interface = typ
@@ -87,7 +87,7 @@ func (ic *InterContainer) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v in
 	}
 }
 
-func (ic InterContainer) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op jsonpointer.Operation) (interface{}, error) {
+func (ic InterContainer) ResolveJSONPointer(ptr *jsonpointer.Pointer, op jsonpointer.Operation) (interface{}, error) {
 	p, t, ok := ptr.Next()
 	if !ok {
 		return nil, fmt.Errorf("unexpected root pointer: %s", ptr.String())
@@ -136,7 +136,7 @@ func (pi *privateImpl) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf(`{"value":%d}`, pi.private.value)), nil
 }
 
-func (pi *privateImpl) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v interface{}) error {
+func (pi *privateImpl) AssignByJSONPointer(ptr *jsonpointer.Pointer, v interface{}) error {
 	if v == nil {
 		pi.private = nil
 		return nil
@@ -149,7 +149,7 @@ func (pi *privateImpl) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v inter
 	return nil
 }
 
-func (pi *privateImpl) DeleteByJSONPointer(ptr *jsonpointer.JSONPointer) error {
+func (pi *privateImpl) DeleteByJSONPointer(ptr *jsonpointer.Pointer) error {
 	t, ok := ptr.NextToken()
 	if !ok {
 		panic("token not available? pointer: " + ptr.String())
@@ -161,7 +161,7 @@ func (pi *privateImpl) DeleteByJSONPointer(ptr *jsonpointer.JSONPointer) error {
 	return nil
 }
 
-func (pi privateImpl) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op jsonpointer.Operation) (interface{}, error) {
+func (pi privateImpl) ResolveJSONPointer(ptr *jsonpointer.Pointer, op jsonpointer.Operation) (interface{}, error) {
 	np, t, ok := ptr.Next()
 	if !ok {
 		panic("token not available? pointer: " + ptr.String())
@@ -195,7 +195,7 @@ type PublicImpl struct {
 	value uint
 }
 
-func (pi *PublicImpl) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v interface{}) error {
+func (pi *PublicImpl) AssignByJSONPointer(ptr *jsonpointer.Pointer, v interface{}) error {
 	t, ok := ptr.NextToken()
 	if !ok {
 		panic("token not available? pointer: " + ptr.String())
@@ -208,7 +208,7 @@ func (pi *PublicImpl) AssignByJSONPointer(ptr *jsonpointer.JSONPointer, v interf
 	return nil
 }
 
-func (pi *PublicImpl) DeleteByJSONPointer(ptr *jsonpointer.JSONPointer) error {
+func (pi *PublicImpl) DeleteByJSONPointer(ptr *jsonpointer.Pointer) error {
 	t, ok := ptr.NextToken()
 	if !ok {
 		panic("token not available? pointer: " + ptr.String())
@@ -220,7 +220,7 @@ func (pi *PublicImpl) DeleteByJSONPointer(ptr *jsonpointer.JSONPointer) error {
 	return nil
 }
 
-func (pi *PublicImpl) ResolveJSONPointer(ptr *jsonpointer.JSONPointer, op jsonpointer.Operation) (interface{}, error) {
+func (pi *PublicImpl) ResolveJSONPointer(ptr *jsonpointer.Pointer, op jsonpointer.Operation) (interface{}, error) {
 	t, ok := ptr.NextToken()
 	if !ok {
 		panic("token not available? pointer: " + ptr.String())
@@ -270,7 +270,7 @@ type Yield struct {
 	Value string
 }
 
-func (y Yield) ResolveJSONPointer(p *jsonpointer.JSONPointer, op jsonpointer.Operation) (interface{}, error) {
+func (y Yield) ResolveJSONPointer(p *jsonpointer.Pointer, op jsonpointer.Operation) (interface{}, error) {
 	return nil, jsonpointer.YieldOperation
 }
 

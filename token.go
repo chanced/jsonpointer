@@ -64,8 +64,8 @@ func (t Token) Int() (int, error) {
 	return strconv.Atoi(t.String())
 }
 
-func (t Token) ptr() JSONPointer {
-	return JSONPointer(t)
+func (t Token) ptr() Pointer {
+	return Pointer(t)
 }
 
 // Index parses t for an index value. If t can be parsed as an int, is equal to

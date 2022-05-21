@@ -26,7 +26,7 @@ func TestDelete(t *testing.T) {
 	assert := require.New(t)
 
 	tests := []struct {
-		ptr  jsonpointer.JSONPointer
+		ptr  jsonpointer.Pointer
 		root Root
 		run  func(r Root, err error)
 	}{
@@ -58,7 +58,7 @@ func TestDeleteJSON(t *testing.T) {
 	assert := require.New(t)
 
 	tests := []struct {
-		ptr  jsonpointer.JSONPointer
+		ptr  jsonpointer.Pointer
 		root Root
 		run  func(r Root, err error)
 	}{

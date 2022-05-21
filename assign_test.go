@@ -29,7 +29,7 @@ func TestAssign(t *testing.T) {
 	var r *Root
 
 	tests := []struct {
-		ptr   jsonpointer.JSONPointer
+		ptr   jsonpointer.Pointer
 		value interface{}
 		run   func(v interface{}, err error)
 	}{
@@ -121,7 +121,7 @@ func TestAssignAny(t *testing.T) {
 
 	m := map[string]interface{}{}
 	tests := []struct {
-		ptr   jsonpointer.JSONPointer
+		ptr   jsonpointer.Pointer
 		value interface{}
 		err   error
 		run   func(v interface{})
@@ -183,7 +183,7 @@ func TestAssignJSON(t *testing.T) {
 	_ = assert
 
 	tests := []struct {
-		ptr   jsonpointer.JSONPointer
+		ptr   jsonpointer.Pointer
 		json  string
 		value interface{}
 		run   func(v Root, err error)

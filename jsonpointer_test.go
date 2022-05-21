@@ -34,7 +34,7 @@ func (str strval) String() string { return string(str) }
 func TestNew(t *testing.T) {
 	assert := require.New(t)
 	tests := []struct {
-		pointer        jsonpointer.JSONPointer
+		pointer        jsonpointer.Pointer
 		expectedstring string
 	}{
 		{jsonpointer.New(""), "/"},
@@ -52,7 +52,7 @@ func TestNew(t *testing.T) {
 func TestJSONPointerValidate(t *testing.T) {
 	assert := require.New(t)
 	tests := []struct {
-		ptr jsonpointer.JSONPointer
+		ptr jsonpointer.Pointer
 		err error
 	}{
 		{"", nil},
@@ -86,8 +86,8 @@ func TestNewFromStrings(t *testing.T) {
 func TestJSONPointerNext(t *testing.T) {
 	assert := require.New(t)
 	tests := []struct {
-		pointer         jsonpointer.JSONPointer
-		expectedpointer jsonpointer.JSONPointer
+		pointer         jsonpointer.Pointer
+		expectedpointer jsonpointer.Pointer
 		expectedtoken   jsonpointer.Token
 		expectedok      bool
 	}{
@@ -110,8 +110,8 @@ func TestJSONPointerNext(t *testing.T) {
 func TestJSONPointerPop(t *testing.T) {
 	assert := require.New(t)
 	pt := []struct {
-		pointer         jsonpointer.JSONPointer
-		expectedpointer jsonpointer.JSONPointer
+		pointer         jsonpointer.Pointer
+		expectedpointer jsonpointer.Pointer
 		expectedtoken   jsonpointer.Token
 		expectedok      bool
 	}{

@@ -36,7 +36,7 @@ var (
 
 const (
 	// Root is a top-level JSONPointer, indicated by an empty string.
-	Root JSONPointer = ""
+	Root Pointer = ""
 )
 
 // New encodes and returns the token + tokens into a JSONPointer.
@@ -49,7 +49,7 @@ const (
 //  jsonpointer.New("/") => "/~1"
 //  jsonpointer.New("~") => "/~0"
 //
-func New(tokens ...string) JSONPointer {
+func New(tokens ...string) Pointer {
 	return NewFromStrings(tokens)
 }
 
@@ -57,7 +57,7 @@ func New(tokens ...string) JSONPointer {
 //
 // Examples:
 //  jsonpointer.NewFromStrings([]string{"foo", "bar", "baz"}) => "/foo/bar/baz"
-func NewFromStrings(tokens []string) JSONPointer {
+func NewFromStrings(tokens []string) Pointer {
 	b := &strings.Builder{}
 	b.Grow(len(tokens))
 	if len(tokens) == 0 {
@@ -70,17 +70,21 @@ func NewFromStrings(tokens []string) JSONPointer {
 			panic(err)
 		}
 	}
-	return JSONPointer(b.String())
+	return Pointer(b.String())
 }
 
-// A JSONPointer is a Unicode string containing a sequence of zero or more
+// Alias for Pointer
+// Deprecated in favor of Pointer
+type JSONPointer = Pointer
+
+// A Pointer is a Unicode string containing a sequence of zero or more
 // reference tokens, each prefixed by a '/' character.
 //
 // See [rfc 6901 for more information](https://datatracker.ietf.org/doc/html/rfc6901).
 //
-type JSONPointer string
+type Pointer string
 
-func (p JSONPointer) String() string {
+func (p Pointer) String() string {
 	return string(p)
 }
 
@@ -88,13 +92,13 @@ func (p JSONPointer) String() string {
 //
 // Note: token is not encoded. Use p.AppendString to encode and append the
 // token.
-func (p JSONPointer) Append(token Token) JSONPointer {
+func (p Pointer) Append(token Token) Pointer {
 	return p + "/" + token.ptr()
 }
 
 // AppendString encodes and appends token to the value of p and returns the new
 // JSONPointer.
-func (p JSONPointer) AppendString(token string) JSONPointer {
+func (p Pointer) AppendString(token string) Pointer {
 	return p.Append(Token(encoder.Replace(token)))
 }
 
@@ -103,13 +107,13 @@ func (p JSONPointer) AppendString(token string) JSONPointer {
 //
 // Note: token is not encoded. Use p.PrependString to encode and prepend the
 // token.
-func (p JSONPointer) Prepend(token Token) JSONPointer {
+func (p Pointer) Prepend(token Token) Pointer {
 	return "/" + token.ptr() + p
 }
 
 // PrependString encodes and prepends token to the value of p and returns the new
 // JSONPointer.
-func (p JSONPointer) PrependString(token string) JSONPointer {
+func (p Pointer) PrependString(token string) Pointer {
 	return p.Prepend(Token(encoder.Replace(token)))
 }
 
@@ -121,14 +125,14 @@ func (p JSONPointer) PrependString(token string) JSONPointer {
 // by a '0' or '1'.
 //
 //
-func (p JSONPointer) Validate() (err error) {
+func (p Pointer) Validate() (err error) {
 	if err = p.validateStart(); err != nil {
 		return err
 	}
 	return p.validateeEncoding()
 }
 
-func (p JSONPointer) validateeEncoding() error {
+func (p Pointer) validateeEncoding() error {
 	if len(p) == 0 {
 		return nil
 	}
@@ -143,29 +147,29 @@ func (p JSONPointer) validateeEncoding() error {
 	return nil
 }
 
-func (p JSONPointer) validateStart() error {
+func (p Pointer) validateStart() error {
 	if len(p) > 0 && !startsWithSlash(p) {
 		return ErrMalformedStart
 	}
 	return nil
 }
 
-func (p JSONPointer) Pop() (JSONPointer, Token, bool) {
+func (p Pointer) Pop() (Pointer, Token, bool) {
 	i := lastSlash(p)
 	if i == -1 {
 		return "", "", false
 	}
-	return JSONPointer(p[:i]), Token(p[i+1:]), true
+	return Pointer(p[:i]), Token(p[i+1:]), true
 }
 
-func (p JSONPointer) LastToken() (Token, bool) {
+func (p Pointer) LastToken() (Token, bool) {
 	_, t, e := p.Pop()
 	return t, e
 }
 
 // Next splits the JSONPointer at the first slash and returns the token and the
 // remaining JSONPointer.
-func (p JSONPointer) Next() (JSONPointer, Token, bool) {
+func (p Pointer) Next() (Pointer, Token, bool) {
 	if p == "" {
 		return "", "", false
 	}
@@ -176,27 +180,27 @@ func (p JSONPointer) Next() (JSONPointer, Token, bool) {
 	case 0:
 		return "", Token(p[1:]), true
 	default:
-		return JSONPointer(p[i:]), Token(p[1:i]), true
+		return Pointer(p[i:]), Token(p[1:i]), true
 	}
 }
 
 // NextToken splits the JSONPointer at the first slash and returns the token.
-func (p JSONPointer) NextToken() (Token, bool) {
+func (p Pointer) NextToken() (Token, bool) {
 	_, t, ok := p.Next()
 	return t, ok
 }
 
-func (p JSONPointer) NextPointer() (JSONPointer, bool) {
+func (p Pointer) NextPointer() (Pointer, bool) {
 	v, _, ok := p.Next()
 	return v, ok
 }
 
-func (p JSONPointer) IsRoot() bool {
+func (p Pointer) IsRoot() bool {
 	return p == Root
 }
 
 // Tokens returns the decoded tokens of the JSONPointer.
-func (p JSONPointer) Tokens() []string {
+func (p Pointer) Tokens() []string {
 	if p == "" {
 		return []string{}
 	}
@@ -212,11 +216,11 @@ func (p JSONPointer) Tokens() []string {
 
 // lastSlash(ptr) returns the index of the last slash in the JSONPointer or -1
 // if not present
-func lastSlash(ptr JSONPointer) int {
+func lastSlash(ptr Pointer) int {
 	return strings.LastIndexByte(string(ptr), '/')
 }
 
-func startsWithSlash(ptr JSONPointer) bool {
+func startsWithSlash(ptr Pointer) bool {
 	if len(ptr) == 0 {
 		return false
 	}
@@ -224,7 +228,7 @@ func startsWithSlash(ptr JSONPointer) bool {
 }
 
 // nextSlash(ptr) returns the index of the next slash in the JSONPointer.
-func nextSlash(ptr JSONPointer) int {
+func nextSlash(ptr Pointer) int {
 	if !startsWithSlash(ptr) {
 		return -1
 	}

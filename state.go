@@ -37,7 +37,7 @@ var (
 	typeAnyMap          = reflect.TypeOf(map[string]interface{}{})
 )
 
-func newState(ptr JSONPointer, op Operation) *state {
+func newState(ptr Pointer, op Operation) *state {
 	var s *state
 	if v := statePool.Get(); v != nil {
 		s = v.(*state)
@@ -52,8 +52,8 @@ func newState(ptr JSONPointer, op Operation) *state {
 
 type state struct {
 	op      Operation
-	ptr     JSONPointer
-	current JSONPointer
+	ptr     Pointer
+	current Pointer
 }
 
 func (s *state) Release() {
@@ -639,12 +639,12 @@ func (s state) deleteMapIndex(v reflect.Value, t Token) error {
 	return s.setMapIndex(v, t, reflect.Value{})
 }
 
-func (s state) JSONPointer() JSONPointer {
+func (s state) JSONPointer() Pointer {
 	return s.ptr
 }
 
 // CurrentJSONPointer returns the JSONPointer at the time of the error.
-func (s state) CurrentJSONPointer() JSONPointer {
+func (s state) CurrentJSONPointer() Pointer {
 	return s.current
 }
 
