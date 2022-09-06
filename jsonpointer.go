@@ -35,28 +35,42 @@ var (
 )
 
 const (
-	// Root is a top-level JSONPointer, indicated by an empty string.
+	// Root is a top-level JSONPointer, indicated by "/".
 	Root Pointer = ""
 )
 
 // New encodes and returns the token + tokens into a JSONPointer.
 //
 // Examples:
-//  jsonpointer.New("foo", "bar") => "/foo/bar"
-//  jsonpointer.New("/foo/bar") => "/~1foo~1bar"
-//  jsonpointer.New() => ""
-//  jsonpointer.New("") => "/"
-//  jsonpointer.New("/") => "/~1"
-//  jsonpointer.New("~") => "/~0"
 //
+//	jsonpointer.New("foo", "bar") => "/foo/bar"
+//	jsonpointer.New("/foo/bar") => "/~1foo~1bar"
+//	jsonpointer.New() => "/"
+//	jsonpointer.New("") => "/"
+//	jsonpointer.New("/") => "/~1"
+//	jsonpointer.New("~") => "/~0"
 func New(tokens ...string) Pointer {
 	return NewFromStrings(tokens)
+}
+
+// From accepts a string, trims any leading '#' and returns str as a Pointer as
+// well as any validation errors.
+func From(ptr string) (Pointer, error) {
+	if len(ptr) == 0 {
+		return Root, nil
+	}
+	if ptr[0] == '#' {
+		ptr = ptr[1:]
+	}
+	j := Pointer(ptr)
+	return j, j.Validate()
 }
 
 // NewFromStrings encodes and returns the tokens into a JSONPointer.
 //
 // Examples:
-//  jsonpointer.NewFromStrings([]string{"foo", "bar", "baz"}) => "/foo/bar/baz"
+//
+//	jsonpointer.NewFromStrings([]string{"foo", "bar", "baz"}) => "/foo/bar/baz"
 func NewFromStrings(tokens []string) Pointer {
 	b := &strings.Builder{}
 	b.Grow(len(tokens))
@@ -81,7 +95,6 @@ type JSONPointer = Pointer
 // reference tokens, each prefixed by a '/' character.
 //
 // See [rfc 6901 for more information](https://datatracker.ietf.org/doc/html/rfc6901).
-//
 type Pointer string
 
 func (p Pointer) String() string {
@@ -123,8 +136,6 @@ func (p Pointer) PrependString(token string) Pointer {
 //
 // - p must be properly encoded, meaning that '~' must be immediately followed
 // by a '0' or '1'.
-//
-//
 func (p Pointer) Validate() (err error) {
 	if err = p.validateStart(); err != nil {
 		return err

@@ -21,12 +21,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// func TestError(t *testing.T) {
-// 	assert := require.New(t)
-// 	var err error = &jsonpointer.FormatError{}
-// 	err2 := &jsonpointer.FormatError{}
-// 	assert.ErrorIs(err, err2)
-// }
+//	func TestError(t *testing.T) {
+//		assert := require.New(t)
+//		var err error = &jsonpointer.FormatError{}
+//		err2 := &jsonpointer.FormatError{}
+//		assert.ErrorIs(err, err2)
+//	}
 type strval string
 
 func (str strval) String() string { return string(str) }
@@ -47,6 +47,16 @@ func TestNew(t *testing.T) {
 	for _, e := range tests {
 		assert.Equal(e.expectedstring, e.pointer.String())
 	}
+}
+
+func TestFrom(t *testing.T) {
+	assert := require.New(t)
+	p, err := jsonpointer.From("#/foo")
+	assert.NoError(err)
+	assert.Equal("/foo", p.String())
+
+	_, err = jsonpointer.From("#invalid")
+	assert.Error(err)
 }
 
 func TestJSONPointerValidate(t *testing.T) {
