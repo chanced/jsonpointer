@@ -53,9 +53,14 @@ func New(tokens ...string) Pointer {
 	return NewFromStrings(tokens)
 }
 
-// From accepts a string, trims any leading '#' and returns str as a Pointer as
-// well as any validation errors.
+// Deprecated: use Parse instead.
 func From(ptr string) (Pointer, error) {
+	return Parse(ptr)
+}
+
+// Parse accepts a string, trims any leading '#' and returns str as a Pointer as
+// well as any validation errors.
+func Parse(ptr string) (Pointer, error) {
 	if len(ptr) == 0 {
 		return Root, nil
 	}
